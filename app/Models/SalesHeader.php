@@ -23,6 +23,6 @@ class SalesHeader extends Model
 
     public function salesLines()
     {
-        return $this->hasMany(SalesLine::class, 'extdocno', 'extdocno');
+        return $this->hasMany(SalesLine::class, 'document_no', 'extdocno');
     }
 }

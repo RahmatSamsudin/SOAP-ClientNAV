@@ -14,16 +14,22 @@ class SalesOrderController extends Controller
 {
     public function index(Request $request)
     {
+        date_default_timezone_set('Asia/Jakarta');
+        $start = date('d-m-Y H:i:s');
         $errorLog = [];
         $countProcess = 0;
         $countError = 0;
-        set_time_limit(500);
-        $SalesHeader = SalesHeader::with(['salesLines'])
+        // set_time_limit(500);
+        $SalesHeader = SalesHeader::with(['salesLines' => function ($query) {
+            $query->orderBy('item_no', 'asc');
+        }])
             ->where('sync', false)
             ->orderBy('orderdate', 'asc')
-            ->limit(2)
+            ->orderBy('custno', 'asc')
+            ->limit(200)
             ->get();
 
+        // return $SalesHeader;
         foreach ($SalesHeader as $a) {
             // Processing Sales Header
             $header = true;
@@ -45,6 +51,7 @@ class SalesOrderController extends Controller
 
             // Processing Sales Line
             if ($header) {
+                set_time_limit(500);
                 try {
                     $salesLines = $a->salesLines;
                     $clines = count($salesLines);
@@ -52,15 +59,15 @@ class SalesOrderController extends Controller
                         for ($i = 0; $i < $clines; $i++) {
                             if ($line) {
                                 $lines = [
-                                    'extdocno' => $salesLines[$i]['extdocno'],
-                                    'loccode' => $salesLines[$i]['loccode'],
-                                    'salestype' => $salesLines[$i]['salestype'],
-                                    'itemno' => $salesLines[$i]['itemno'],
-                                    'qty' => $salesLines[$i]['qty'],
-                                    'unitprice' =>  $salesLines[$i]['unitprice'],
-                                    'totalprice' =>  $salesLines[$i]['totalprice'],
-                                    'postdocumentid' =>  $salesLines[$i]['postdocumentid'],
-                                    'desc' =>  $salesLines[$i]['desc'],
+                                    'extdocno' => $salesLines[$i]['document_no'],
+                                    'loccode' => $salesLines[$i]['location_code'],
+                                    'salestype' => $salesLines[$i]['sales_type'],
+                                    'itemno' => $salesLines[$i]['item_no'],
+                                    'qty' => $salesLines[$i]['quantity'],
+                                    'unitprice' =>  $salesLines[$i]['price'],
+                                    'totalprice' =>  $salesLines[$i]['total_price'],
+                                    'postdocumentid' =>  $salesLines[$i]['id'],
+                                    'desc' =>  $salesLines[$i]['description'],
                                 ];
                                 $lines = $this->_sendDataLines($lines);
                             }
@@ -86,6 +93,8 @@ class SalesOrderController extends Controller
         }
 
         echo json_encode([
+            'Start Time' => $start,
+            'End Date' => date('d-m-Y H:i:s'),
             'Error Data' => $countError,
             'Process Data' => $countProcess,
             'messageError' => $errorLog
