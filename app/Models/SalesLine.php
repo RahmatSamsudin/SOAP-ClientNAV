@@ -9,19 +9,19 @@ class SalesLine extends Model
 {
     use HasFactory;
     protected $table = 'sales_lines';
-    protected $primaryKey = null;
+    protected $primaryKey = 'id';
     public $incrementing = false;
     public $timestamps = false;
     // protected $keyType = 'string';
     protected $fillable = [
-        'extdocno',
-        'loccode',
-        'salestype',
-        'itemno',
-        'qty',
-        'unitprice',
-        'totalprice',
-        'postdocumentid',
+        'document_no',
+        'location_code',
+        'sales_type',
+        'item_no',
+        'quantity',
+        'price',
+        'total_price',
+        'description',
         'desc',
     ];
 }
