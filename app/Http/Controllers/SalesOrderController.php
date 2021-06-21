@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Helpers\NTLMSoapClient;
 use App\Helpers\NTLMStream;
-use App\Models\SalesHeader;
-use App\Models\SalesLine;
+use App\Models\ExportNAV;
+use App\Models\DataPOS;
+use App\Models\ItemExcluded;
+use App\Models\DataTransaction;
 use Exception;
 use Illuminate\Http\Request;
 use SoapFault;
@@ -19,86 +21,116 @@ class SalesOrderController extends Controller
         $errorLog = [];
         $countProcess = 0;
         $countError = 0;
+        $countHead = 0;
         // set_time_limit(500);
-        $SalesHeader = SalesHeader::with(['salesLines' => function ($query) {
-            $query->orderBy('item_no', 'asc');
-        }])
-            ->where('sync', false)
-            ->orderBy('orderdate', 'asc')
-            ->orderBy('custno', 'asc')
-            ->limit(200)
-            ->get();
-
+        $SalesHeader = ExportNAV::readyExport();
+            //$codeunitURL = env('NAV_BASE_URL') . rawurlencode(env("NAV_COMPANY_NAME")) . '/Codeunit/NAVSync';
+            //exit(dd($codeunitURL));
         // return $SalesHeader;
+        $lines = [];
         foreach ($SalesHeader as $a) {
             // Processing Sales Header
             $header = true;
             $line = true;
-            $header = [
-                'custno' => $a->custno,
-                'orderdate' => $a->orderdate,
-                'extdocno' => $a->extdocno
+            $head[$countHead] = [
+                'custno' => $a->stores['nav_code'],
+                'orderdate' => $a->sales_date,
+                'extdocno' => $a->document_number
             ];
-
+            //exit(var_dump($header['orderdate']));
             try {
-                $header = $this->_sendDataHeader($header);
+                $header = $this->_sendDataHeader($head[$countHead]);
             } catch (SoapFault $fault) {
                 $header = false;
-                array_push($errorLog, 'Sales Header No. ' . $a->extdocno . ' Error : ' . $fault->faultstring);
+                $head[$countHead]['error'][] = 'Sales Header No. ' . $a->document_number . ' Error : ' . $fault->faultstring;
             } catch (Exception $ex) {
-                array_push($errorLog, $ex->getMessage());
+                $head[$countHead]['error'][] = $ex->getMessage();
             };
 
             // Processing Sales Line
             if ($header) {
-                set_time_limit(500);
+                set_time_limit(0);
+                $head[$countHead]['line'] = 0;
+                $head[$countHead]['processed'] = 0;
+                // Processing POS DATA
                 try {
-                    $salesLines = $a->salesLines;
-                    $clines = count($salesLines);
+                    $salesLines = DataPOS::transaction($a->store, $a->sales_date, $a->stores['location_id'])->get();
+                    // exit(json_encode($salesLines, JSON_PRETTY_PRINT));
+                    $head[$countHead]['line'] = count($salesLines);
                     if ($line) {
-                        for ($i = 0; $i < $clines; $i++) {
+                        for ($i = 0; $i < $head[$countHead]['line']; $i++) {
                             if ($line) {
-                                $lines = [
-                                    'extdocno' => $salesLines[$i]['document_no'],
-                                    'loccode' => $salesLines[$i]['location_code'],
-                                    'salestype' => $salesLines[$i]['sales_type'],
-                                    'itemno' => $salesLines[$i]['item_no'],
-                                    'qty' => $salesLines[$i]['quantity'],
-                                    'unitprice' =>  $salesLines[$i]['price'],
-                                    'totalprice' =>  $salesLines[$i]['total_price'],
-                                    'postdocumentid' =>  $salesLines[$i]['id'],
-                                    'desc' =>  $salesLines[$i]['description'],
-                                ];
-                                $lines = $this->_sendDataLines($lines);
+                                $this->_sendDataLines([
+                                    'extdocno' => $a->document_number,
+                                    'loccode' => $a->stores['nav_code'],
+                                    'salestype' => $salesLines[$i]['sales_type_id'],
+                                    'itemno' => $salesLines[$i]['item_code'],
+                                    'qty' => $salesLines[$i]['sales_qty'],
+                                    'unitprice' =>  $salesLines[$i]['sales_price'],
+                                    'totalprice' =>  $salesLines[$i]['sales_price']*$salesLines[$i]['sales_qty'],
+                                    'postdocumentid' =>  $salesLines[$i]['pos_data_id'],
+                                    'desc' =>   $salesLines[$i]['item_name'],
+                                ]);
+                                $head[$countHead]['processed']++;
                             }
                         }
                     }
                 } catch (SoapFault $fault) {
                     $line = false;
-                    array_push($errorLog, 'Sales Line No. ' . $a->extdocno . ' id (' . $salesLines[$i]['postdocumentid'] . ') Error : ' . $fault->faultstring);
+                    $head[$countHead]['error'][] = "Header: {$a->document_number}   POS Line No. ".($i+1)." of {$head[$countHead]['line']}  id ({$salesLines[$i]['pos_data_id']}) Error : {$fault->faultstring}";
                 } catch (Exception $ex) {
                     $line = false;
-                    array_push($errorLog, $ex->getMessage());
-                };
+                    $head[$countHead]['error'][] = 'POS '.$ex->getMessage();
+                }
+                // Processing CPS DATA
+                try {
+                    $cpsLines = DataTransaction::daily($a->stores['store_id'], $head[$countHead]['orderdate']);
+                    if ($line) {
+                        $i = 0;
+                        $head[$countHead]['processed'] = 0;
+                        foreach($cpsLines as $cpsLine){
+                            if ($line) {
+                                $this->_sendDataLines([
+                                    'extdocno' => $a->document_number,
+                                    'loccode' => $a->stores['nav_code'],
+                                    'salestype' => $cpsLine->col2,
+                                    'itemno' => $cpsLine->item_code,
+                                    'qty' => $cpsLine->sumqty,
+                                    'unitprice' =>  $cpsLine->price,
+                                    'totalprice' =>  $cpsLine->sumqtyprice,
+                                    'postdocumentid' =>  $i,
+                                    'desc' =>  $cpsLine->item_name,
+                                ]);
+                                $head[$countHead]['processed']++;
+                            }
+                            $i++;
+                        }
+                    }
+                    $head[$countHead]['line'] = $head[$countHead]['line']+$i;
+                } catch (SoapFault $fault) {
+                    $line = false;
+                    $head[$countHead]['error'][] = "Header: {$a->document_number}   CPS Line No. {$i} of ".count($cpsLines)." Error : {$fault->faultstring}";
+                } catch (Exception $ex) {
+                    $line = false;
+                    $head[$countHead]['error'][] = 'CPS '.$ex->getMessage();
+                }
             }
 
             // Count Processing Data + Error Data
-            $countProcess++;
             if ($header && $line) {
-                SalesHeader::where('extdocno', $a->extdocno)
-                    ->update(['sync' => true]);
+                ExportNAV::where('document_number', $a->document_number)->update(['export_status' => 1]);
             } else {
                 $countError++;
             }
+
+            $countHead++;
         }
 
-        echo json_encode([
-            'Start Time' => $start,
-            'End Date' => date('d-m-Y H:i:s'),
+        echo '<pre>'.json_encode([
             'Error Data' => $countError,
             'Process Data' => $countProcess,
-            'messageError' => $errorLog
-        ]);
+            'header' => $head,
+        ], JSON_PRETTY_PRINT).'</pre>';
     }
 
     private function _sendDataHeader(array $params)
@@ -122,10 +154,11 @@ class SalesOrderController extends Controller
 
         $codeunitURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
 
-        // Initialize Page Soap Client 
+        // Initialize Page Soap Client
         $codeunit = new NTLMSoapClient($codeunitURL);
 
         $result = $codeunit->APIImportSOHeader($params);
+
 
         return $result;
         // Put back the HTTP protocal to esure we do not affect other operations.
@@ -153,7 +186,7 @@ class SalesOrderController extends Controller
 
         $codeunitURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
 
-        // Initialize Page Soap Client 
+        // Initialize Page Soap Client
         $codeunit = new NTLMSoapClient($codeunitURL);
 
         $result = $codeunit->APIImportSOLine($params);
