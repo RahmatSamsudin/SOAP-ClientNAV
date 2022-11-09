@@ -2,78 +2,59 @@
 
 namespace App\Http\Controllers;
 
-use App\Helpers\NTLMSoapClient;
-use App\Helpers\NTLMStream;
-use App\Mail\NAVSend;
+use App\Models\Store;
 use App\Models\ExportNAV;
 use App\Models\ExportLine;
+use App\Helpers\NTLMSOAPClient;
+use App\Mail\NAVSend;
 use App\Models\DataPOS;
 use App\Models\LogExportNav;
 use App\Models\DataTransaction;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 use Exception;
-use SoapFault;
+#use SoapFault;
 
-class SalesOrderController extends Controller
+class HomeController extends Controller
 {
     private $date = '';
     private $start = '';
     private $end = '';
     private $time = '';
     private $error = [];
-    private $skipped = [];
-    private $processed = [];
-    public $running_number;
 
+    public function index(Request $request)
+    {
 
-    public function index()
+        #return view('home', ['stores' => Store::with('Locations')->where('store_status', 1)->where('export_nav', 1)->whereIn('location_id', [2,20])->get()]);
+        return view('home', ['stores' => Store::with('Locations')->where('store_status', 1)->where('export_nav', 1)->whereIn('location_id', [1,12])->orderBy('location_id', 'ASC')->orderBy('store_name', 'ASC')->get()]);
+    }
+
+    public function send(Request $request)
     {
         set_time_limit(0);
         date_default_timezone_set('Asia/Jakarta');
-        $today = Carbon::now();
-        $this->setVar('date',  $today->format('Y-m-d'));
-        $this->setVar('start', $this->getVar('date') . ' 06:00:00');
-        $this->setVar('end', $this->getVar('date') . ' 20:00:00');
-        #$this->setVar('start', $this->getVar('date'). ' 23:00:00');
-        #$this->setVar('end', $today->addDays(1)->format('Y-m-d'). ' 07:00:00');
-        #$head = $this->_proccessHeader(collect(DB::select("SELECT * FROM export_nav JOIN store ON store.store_id=export_nav.store WHERE document_number IN ('20220630051','20220630061','20220630057','20220630058') AND export_status=0 AND export_nav=1 ORDER BY sales_date,store ASC")));
-        $head = $this->_proccessHeader(collect(DB::select("SELECT * FROM export_nav JOIN store ON store.store_id=export_nav.store WHERE document_number IN (
-            '20220630051',
-            '20220630061'
-            '20220630057',
-            '20220630058'
-        )
-        AND export_status=0 AND export_nav=1 ORDER BY sales_date,store ASC")));
-        /*
-        $head = $this->_proccessHeader(collect(DB::select('
-            SELECT * FROM export_nav JOIN store ON store.store_id=export_nav.store WHERE sales_date < "'.Carbon::now()->subDays(14).'" AND export_status=0 AND export_nav=1 ORDER BY sales_date,store ASC'
-        )));
-        */
-        if (count($this->skipped) > 0) {
-            $this->skipped = collect($this->skipped);
-            $this->_proccessHeader($this->skipped);
+        $validated = $request->validate([
+            'tanggal' => 'required|date',
+            'outlet' => 'required|int|digits_between:1,4',
+        ]);
+        $input = $request->post();
+        $store = Store::findorfail($input['outlet']);
+        $document_ready = collect(ExportNAV::with('stores')->where('document_number', date("Ymd", strtotime($input['tanggal'])) . $store->nav_code)->where('export_status', 0)->get());
+        if (count($document_ready) == 0) {
+            throw ValidationException::withMessages(['document_number' => 'Data is not ready to be Exported']);
         }
+
+
+        $head = $this->_proccessHeader($document_ready);
         if (count($head) > 0) {
-            Mail::to(['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id'])
-                ->send(new NAVSend($head));
+            #Mail::to(['rahmat@sushitei.co.id','benardi@sushitei.co.id', 'augus@sushitei.co.id'])
+            #->send(new NAVSend($head));
+
+            return view('send', ['data' => $head]);
         }
-
-
-
-        echo '<br/>OKE';
-    }
-
-    public function setVar($name, $value)
-    {
-        $this->{$name} = $value;
-    }
-
-    public function getVar($name)
-    {
-        return $this->{$name};
     }
 
     private function _proccessHeader(object $headers)
@@ -182,8 +163,8 @@ class SalesOrderController extends Controller
             LogExportNav::create([
                 'export_id' => $head['export_id'],
                 'message' => $message,
-                'quantity' => $return['quantity'] ,
-                'total' => $return['total'],
+                'quantity' => !empty($return['quantity']) ? $return['quantity'] : 0,
+                'total' => !empty($return['total']) ? $return['total'] : 0,
                 'created_at' => $this->getVar('time')
             ]);
         }
@@ -254,5 +235,16 @@ class SalesOrderController extends Controller
         return $result;
         // Put back the HTTP protocal to esure we do not affect other operations.
         stream_wrapper_restore('http');
+    }
+
+
+    public function setVar($name, $value)
+    {
+        $this->{$name} = $value;
+    }
+
+    public function getVar($name)
+    {
+        return $this->{$name};
     }
 }

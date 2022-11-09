@@ -29,7 +29,73 @@ class DataTransaction extends Model
         return $this->hasOne(Store::class, 'store_id', 'store_id');
     }
 
-    public static function daily($store, $date)
+    public static function daily($document)
+    {
+        return DB::select(DB::raw("
+    SELECT
+        '3' AS col2,
+        DATE_FORMAT( it.trx_date, '%m/%d/%Y' ) AS dateformated,
+        it.colour_name,
+        it.item_code,
+        CASE WHEN ot.sumqty IS NOT NULL THEN (it.sumqty-ot.sumqty) ELSE it.sumqty END  AS sumqty,
+        it.price,
+        it.item_name,
+        CASE WHEN ot.sumqtyprice IS NOT NULL THEN (it.sumqtyprice-ot.sumqtyprice) ELSE (it.sumqtyprice) END  AS sumqtyprice
+    FROM
+        (
+        SELECT
+        trx_date,
+        colour_name,
+        item_code,
+        item_name,
+        SUM( qty ) AS sumqty,
+        price,
+        SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice
+        FROM `in_out_trx`
+        WHERE sales_doc = '{$document}'
+        AND inorout = 1
+        GROUP BY
+        item_code,
+        price
+    ) it
+    LEFT JOIN (
+        SELECT
+        item_code,
+        SUM( qty ) AS sumqty,
+        SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice,
+        price
+        FROM `in_out_trx`
+        WHERE sales_doc = '{$document}'
+        AND inorout = 2
+        GROUP BY
+        item_code,
+        price
+    ) ot ON ot.item_code=it.item_code AND ot.price=it.price
+
+    ORDER BY
+        it.item_code ASC"));
+
+    }
+    public static function dailyBackup2($document)
+    {
+        return DB::select(DB::raw("
+    SELECT  '3' AS col2,
+        DATE_FORMAT(trx_date, '%m/%d/%Y') AS dateformated,
+        item_code,
+        SUM(qty) AS sumqty,
+    in_out_trx.price,
+    item_name,
+        SUM(in_out_trx.qty*in_out_trx.price) AS sumqtyprice
+    FROM `in_out_trx`
+    WHERE
+    sales_doc='{$document}'
+    AND inorout=1
+    GROUP BY item_code,price
+    ORDER BY item_code ASC"));
+
+    }
+
+    public static function dailyBack($store, $date)
     {
         return DB::select(DB::raw("
         SELECT

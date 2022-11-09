@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
 
 class ExportNAV extends Model
 {
@@ -24,16 +25,24 @@ class ExportNAV extends Model
 
     public static function readyExport()
     {
-        return self::where('export_status', 0)->orderBy('store', 'asc')->orderBy('sales_date', 'asc')->get();
+        return self::where('export_status', 0)
+            #->where('export_id', 795);
+            ->whereDate('sales_date', '>', '2021-12-31')
+            ->whereDate('sales_date', '<', '2022-05-02')
+            #->whereDate('sales_date', '<', Carbon::now()->subDays(14))
+            #->whereDate('last_update', '<', Carbon::now()->subDays(2))
+            ->orderBy('sales_date', 'asc')
+            ->orderBy('store', 'asc');
     }
 
     public function dataPOS()
     {
-        return $this->hasMany(DataPOS::class, 'store_id', 'store');
+        return $this->hasMany(DataPOS::class, 'store', 'store_id');
     }
 
     public function stores()
     {
-        return $this->hasOne(Store::class, 'store_id', 'store');
+        return $this->belongsTo(Store::class, 'store', 'store_id');
     }
+
 }

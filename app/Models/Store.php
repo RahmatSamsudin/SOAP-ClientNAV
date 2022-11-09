@@ -31,4 +31,9 @@ class Store extends Model
     {
         return $this->hasMany(DataPOS::class, 'store', 'sales_date');
     }
+
+    public function locations()
+    {
+        return $this->belongsTo(Location::class, 'location_id', 'location_id');
+    }
 }

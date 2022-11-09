@@ -26,16 +26,27 @@ class DataPOS extends Model
 
     public function store()
     {
-        return $this->hasOne(Store::class, 'store_id', 'store_id');
+        return $this->belongsTo(Store::class, 'store_id', 'store_id');
     }
 
-    public static function transaction($store, $date, $exclude_location)
+    public static function transaction($sales_doc, $exclude_location)
     {
-        return self::where('sales_date', $date)
-            ->where('store_id', $store)
-            ->whereNotIn('item_code', ItemExcluded::select('exc_item_code')->where('exc_item_loc', $exclude_location)
-            ->orderBy('item_code', 'ASC')
-        );
+        $excludes = ItemExcluded::select('exc_item_code')->where('exc_item_loc', $exclude_location)->get();
+
+        return self::where('sales_doc', $sales_doc)
+            ->where(function ($query) use ($excludes) {
+                return $query->whereNotIn('item_code', $excludes)
+                    ->where('item_code', 'NOT LIKE', '0301-120-%')
+                    ->where('item_code', 'NOT LIKE', '999990%');
+            })
+
+            ->orderBy('item_code', 'ASC');
     }
 
+    public function getTotal()
+    {
+        return $this->sum(function ($detail) {
+            return $detail->sales_qty * $detail->sales_price;
+        });
+    }
 }
