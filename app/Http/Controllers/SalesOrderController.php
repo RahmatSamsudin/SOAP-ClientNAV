@@ -30,7 +30,7 @@ class SalesOrderController extends Controller
     public $is_console;
 
 
-    public function index($console = 0)
+    public function index($console = 0, $waste = 0)
     {
         set_time_limit(0);
         date_default_timezone_set('Asia/Jakarta');
@@ -53,8 +53,15 @@ class SalesOrderController extends Controller
             ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
             ->orderBy('sales_date', 'asc')
             ->orderBy('store', 'asc');
-
-        $head = $this->_proccessHeader(Collect($query->get()));
+        
+        if($waste){
+            $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', '1')->get()));
+            $email = new NAVSend($head);
+        }else{
+            $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', '0')->get()));
+            $email = new NAVSend($head);
+        }
+        
 
         if (count($this->skipped) > 0) {
             $this->skipped = collect($this->skipped);
@@ -63,7 +70,7 @@ class SalesOrderController extends Controller
 
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa3.jkt@sushitei.co.id'];
-            Mail::to($recipients)->send(new NAVSend($head));
+            Mail::to($recipients)->send($email);
         }
     }
 
