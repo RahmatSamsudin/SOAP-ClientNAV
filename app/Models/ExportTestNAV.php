@@ -6,11 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 
-class ExportNAV extends Model
+class ExportTestNAV extends Model
 {
     use HasFactory;
 
-    protected $table = 'export_nav';
+    protected $table = 'export_nav_copy1';
     protected $primaryKey = 'export_id';
     public $incrementing = true;
     public $timestamps = 'last_update';

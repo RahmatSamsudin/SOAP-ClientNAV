@@ -5,9 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\ItemExcluded;
 
-class ExportLine extends Model
+class ExportTest extends Model
 {
-
+    protected $table = 'export_lines_copy1';
     public $incrementing = true;
     protected $fillable = [
         'export_id',
@@ -21,6 +21,7 @@ class ExportLine extends Model
         'unitprice',
         'totalprice',
         'loccode',
+        'is_cps'
     ];
 
     public function Store()
@@ -40,7 +41,7 @@ class ExportLine extends Model
         return self::select('id as postdocumentid', 'extdocno', 'loccode', 'salestype', 'itemno', 'qty', 'unitprice', 'totalprice', 'desc')
             ->where('export_id', $export_id)
             ->where('itemno', '!=', '')
-            #->where('desc', '!=', '')
+            ->where('desc', '!=', '')
             ->orderBy('itemno', 'ASC');
 
     }

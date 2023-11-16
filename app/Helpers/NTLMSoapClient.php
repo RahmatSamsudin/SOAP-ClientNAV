@@ -6,7 +6,8 @@ use SoapClient;
 require_once("NTLMUserID.php");
 
 class NTLMSoapClient extends SoapClient {
-    function __doRequest($request, $location, $action, $version, $one_way = NULL) {
+    function __doRequest($request, $location, $action, $version, $one_way = NULL)
+    {
         $headers = array(
             'Method: POST',
             'Connection: Keep-Alive',

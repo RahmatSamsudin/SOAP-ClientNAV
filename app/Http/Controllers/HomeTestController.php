@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Store;
-use App\Models\ExportNAV;
-use App\Models\ExportLine;
+use App\Models\ExportTestNAV as ExportNAV;
+use App\Models\ExportTest as ExportLine;
 use App\Helpers\NTLMSOAPClient;
 use App\Mail\NAVSend;
 use App\Models\DataPOS;
@@ -17,20 +17,19 @@ use Illuminate\Support\Facades\Mail;
 use Exception;
 #use SoapFault;
 
-class HomeController extends Controller
+class HomeTestController extends Controller
 {
     private $date = '';
     private $start = '';
     private $end = '';
     private $time = '';
     private $error = [];
-    public $last_api_call;
 
     public function index(Request $request)
     {
 
         #return view('home', ['stores' => Store::with('Locations')->where('store_status', 1)->where('export_nav', 1)->whereIn('location_id', [2,20])->get()]);
-        return view('home', ['stores' => Store::with('Locations')->where('store_status', 1)->where('export_nav', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22])->orderBy('location_id', 'ASC')->orderBy('store_name', 'ASC')->get()]);
+        return view('test', ['stores' => Store::with('Locations')->where('store_status', 1)->where('export_nav', 1)->whereIn('location_id', [1,12])->orderBy('location_id', 'ASC')->orderBy('store_name', 'ASC')->get()]);
     }
 
     public function send(Request $request)
@@ -45,7 +44,7 @@ class HomeController extends Controller
         $store = Store::findorfail($input['outlet']);
         $document_ready = collect(ExportNAV::where('sales_date', $input['tanggal'])->where('store', $store->store_id)->where('export_status', 0)->get());
         if (count($document_ready) == 0) {
-            throw ValidationException::withMessages(['document_number' => 'Data is not ready to be Exported']);
+        throw ValidationException::withMessages(['document_number' => 'Data is not ready to be Exported 1'.print_r($request->post())]);
         }
 
 
@@ -79,8 +78,8 @@ class HomeController extends Controller
             $head[$i]['start'] = $currentTime;
             $head[$i]['end'] = $currentTime;
             $checkExportLine = ExportLine::where('export_id', $header->export_id)->get();
-            if ($checkExportLine->count() == 0) {
-                foreach (DataTransaction::daily($header->store, $header->sales_date) as $line) {
+            if($checkExportLine->count() == 0){
+                foreach(DataTransaction::daily($header->store, $header->sales_date) as $line){
                     ExportLine::create([
                         'export_id' => $header->export_id,
                         'store_id' => $header->store,
@@ -96,7 +95,7 @@ class HomeController extends Controller
                         'is_cps' => 1
                     ]);
                 }
-                foreach (DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get() as $line) {
+                foreach(DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get() as $line){
                     ExportLine::create([
                         'export_id' => $header->export_id,
                         'store_id' => $header->store,
@@ -114,30 +113,11 @@ class HomeController extends Controller
                 }
             }
 
-            try {
-                $success = $this->_sendDataHeader($head[$i]);
-            } catch (Exception $ex) {
-                $head[$i]['error'][] = $ex->getMessage();
-            }
+            
             // Processing Sales Line
-            if ($success) {
-                $head[$i]['line'] = $this->_proccessLine($head[$i]);
-            }
-
-            // Count Processing Data + Error Data
-            if ($success && empty($head[$i]['line']['error'])) {
-                $head[$i]['is_success'] = 1;
-                ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
-                LogExportNav::create([
-                    'export_id' => $header->export_id,
-                    'message' => 'Success',
-                    'quantity' => $head[$i]['line']['quantity'],
-                    'total' => $head[$i]['line']['total'],
-                    'created_at' => $currentTime
-                ]);
-            } else {
-                ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
-            }
+           
+            $head[$i]['line'] = $this->_proccessLine($head[$i]);
+            
             $head[$i]['end'] = date("Y-m-d H:i:s");
         }
 
@@ -150,40 +130,19 @@ class HomeController extends Controller
         $line = true;
         $return['quantity'] = 0;
         $return['total'] = 0;
-        $return['processed'] = 1;
-        $currentLine = [];
-        $location = sprintf("%03d", $head['shop_id']);
+        $return['processed'] = 0;
         try {
-            $export_lines = ExportLine::where('export_id', $head['export_id'])->orderBy('itemno', 'asc')->get();
-            foreach ($export_lines as $baris) {
+            foreach (ExportLine::select('id as postdocumentid', 'extdocno', 'loccode', 'salestype', 'itemno', 'qty', 'unitprice', 'totalprice', 'desc')->where('export_id', $head['export_id'])->get() as $baris) {
                 if ($line) {
-                    $bdate = date("Ymd", strtotime($baris->busidate));
-                    $bnum = sprintf("%04d", $return['processed']);
-                    $postdocumentid = (!empty($baris->sent_document_id) ? $baris->sent_document_id : "{$bdate}{$location}{$bnum}");
-                    $currentLine = [
-                        'postdocumentid' => $postdocumentid,
-                        'extdocno' => $baris->extdocno,
-                        'loccode' => $baris->loccode,
-                        'salestype' => $baris->salestype,
-                        'itemno' => $baris->itemno,
-                        'qty' => $baris->qty,
-                        'unitprice' => $baris->unitprice,
-                        'totalprice' => $baris->totalprice,
-                        'desc' => $baris->desc
-                    ];
-                    $this->_sendDataLines($currentLine);
-                    $baris->sent_document_id = $currentLine['postdocumentid'];
-                    $baris->save();
-                    if($baris->salestype != 21){
-                        $return['quantity'] = $return['quantity'] + $baris->qty;
-                        $return['total'] = $return['total'] + $baris->totalprice;
-                    }
+                    #$this->_sendDataLines($baris->toArray());
+                    $return['quantity'] = $return['quantity'] + $baris->qty;
+                    $return['total'] = $return['total'] + $baris->totalprice;
                     $return['processed']++;
                 }
             }
         } catch (Exception $ex) {
             $line = false;
-            $message = 'Line Error: ' . $ex->getMessage() . ' line detail:' . json_encode($currentLine);
+            $message = 'Line Error: ' . $ex->getMessage();
             $return['error'][] = $message;
             LogExportNav::create([
                 'export_id' => $head['export_id'],

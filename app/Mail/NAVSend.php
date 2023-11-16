@@ -30,7 +30,7 @@ class NAVSend extends Mailable
      */
     public function build()
     {
-        return $this->from('it.helpdesk@sushitei.co.id', 'CPS to NAV Daily Report')
+        return $this->from('it.helpdesk@sushitei.co.id', 'CPS to NAV 2023 Daily Report')
                 ->view('emails.daily');
     }
 }

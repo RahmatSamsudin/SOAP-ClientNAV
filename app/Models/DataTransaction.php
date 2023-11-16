@@ -29,7 +29,7 @@ class DataTransaction extends Model
         return $this->hasOne(Store::class, 'store_id', 'store_id');
     }
 
-    public static function daily($document)
+    public static function daily($store, $date)
     {
         return DB::select(DB::raw("
     SELECT
@@ -52,7 +52,7 @@ class DataTransaction extends Model
         price,
         SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice
         FROM `in_out_trx`
-        WHERE sales_doc = '{$document}'
+        WHERE store_id = '{$store}' AND trx_date='{$date}'
         AND inorout = 1
         GROUP BY
         item_code,
@@ -65,7 +65,7 @@ class DataTransaction extends Model
         SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice,
         price
         FROM `in_out_trx`
-        WHERE sales_doc = '{$document}'
+        WHERE store_id = '{$store}' AND trx_date='{$date}'
         AND inorout = 2
         GROUP BY
         item_code,

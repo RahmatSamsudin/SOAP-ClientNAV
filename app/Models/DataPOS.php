@@ -29,15 +29,22 @@ class DataPOS extends Model
         return $this->belongsTo(Store::class, 'store_id', 'store_id');
     }
 
-    public static function transaction($sales_doc, $exclude_location)
+    public static function transaction($store, $date, $exclude_location)
     {
         $excludes = ItemExcluded::select('exc_item_code')->where('exc_item_loc', $exclude_location)->get();
 
-        return self::where('sales_doc', $sales_doc)
+        return self::where('store_id', $store)
+            ->where('sales_date', $date)
             ->where(function ($query) use ($excludes) {
                 return $query->whereNotIn('item_code', $excludes)
+                    // Exclude non inventory item TS
                     ->where('item_code', 'NOT LIKE', '0301-120-%')
-                    ->where('item_code', 'NOT LIKE', '999990%');
+                    //Exclude non inventory item ST
+                    ->where('item_code', 'NOT LIKE', '9990%')
+                    //Exclude non inventory item CAFE
+                    ->where('item_code', 'NOT LIKE', '1CF%')
+                    // Exclude non inventory item HY
+                    ->where('item_code', 'NOT LIKE', '0501-200-%');
             })
 
             ->orderBy('item_code', 'ASC');
