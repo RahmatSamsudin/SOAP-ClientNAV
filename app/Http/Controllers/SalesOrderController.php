@@ -34,42 +34,36 @@ class SalesOrderController extends Controller
     {
         set_time_limit(0);
         date_default_timezone_set('Asia/Jakarta');
-        if($console){
+
+        if ($console) {
             $this->is_console = true;
         }
-        $today = Carbon::now();
-        $this->setVar('date',  $today->format('Y-m-d'));
-        #$this->setVar('start', $this->getVar('date') . ' 06:00:00');
-        #$this->setVar('end', $this->getVar('date') . ' 17:10:00');
-        $this->setVar('start', $this->getVar('date'). ' 22:00:00');
-        $this->setVar('end', $today->addDays(1)->format('Y-m-d'). ' 06:00:00');
-        #$head = $this->_proccessHeader(collect(DB::select("SELECT * FROM export_nav JOIN store ON store.store_id=export_nav.store WHERE document_number IN ('20220630051','20220630061','20220630057','20220630058') AND export_status=0 AND export_nav=1 ORDER BY sales_date,store ASC")));
-        #$head = $this->_proccessHeader(collect(DB::select("SELECT * FROM export_nav JOIN store ON store.store_id=export_nav.store WHERE document_number IN () AND export_status=0 AND export_nav=1 ORDER BY sales_date,store ASC")));
 
-        $head = $this->_proccessHeader(
-            Collect(
-                ExportNAV::with('stores')
-                ->where('export_status', 0)
-                ->whereHas('stores', function ($query) {
-                    return $query->where('export_nav', '=', 1)->whereIn('location_id', [1,12,17,18,21,22]);
-                })
-                ->whereDate('sales_date', '>=', '2023-01-01')
-                #->whereDate('sales_date', '<=', '2023-07-31')
-                ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
-                ->orderBy('sales_date', 'asc')
-                ->orderBy('store', 'asc')
-                #->limit(1)
-                ->get()
-            )
-        );
+        $today = Carbon::now();
+        $date = $today->format('Y-m-d');
+        $start = $date . ' 22:00:00';
+        $end = $today->addDays(1)->format('Y-m-d') . ' 06:00:00';
+
+        $query = ExportNAV::with('stores')
+            ->where('export_status', 0)
+            ->whereHas('stores', function ($query) {
+                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22]);
+            })
+            ->whereDate('sales_date', '>=', '2023-01-01')
+            ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            ->orderBy('sales_date', 'asc')
+            ->orderBy('store', 'asc');
+
+        $head = $this->_proccessHeader(Collect($query->get()));
 
         if (count($this->skipped) > 0) {
             $this->skipped = collect($this->skipped);
             $this->_proccessHeader($this->skipped);
         }
+
         if (count($head) > 0) {
-            Mail::to(['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa3.jkt@sushitei.co.id'])
-                ->send(new NAVSend($head));
+            $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa3.jkt@sushitei.co.id'];
+            Mail::to($recipients)->send(new NAVSend($head));
         }
     }
 
@@ -89,7 +83,7 @@ class SalesOrderController extends Controller
         foreach ($headers as $i => $header) {
             $currentTime = date("Y-m-d H:i:s");
             // Processing Sales Header
-            if($currentTime >= $this->getVar('start') && $currentTime <= $this->getVar('end')){
+            if ($currentTime >= $this->getVar('start') && $currentTime <= $this->getVar('end')) {
                 $this->setVar('time', $currentTime);
                 $success = false;
                 $head[$i]['custno'] = $header->stores->nav_code;
@@ -103,8 +97,8 @@ class SalesOrderController extends Controller
                 $head[$i]['start'] = $currentTime;
                 $head[$i]['end'] = $currentTime;
                 $checkExportLine = ExportLine::where('export_id', $header->export_id)->get();
-                if($checkExportLine->count() == 0){
-                    foreach(DataTransaction::daily($header->store, $header->sales_date) as $line){
+                if ($checkExportLine->count() == 0) {
+                    foreach (DataTransaction::daily($header->store, $header->sales_date) as $line) {
                         ExportLine::create([
                             'export_id' => $header->export_id,
                             'store_id' => $header->store,
@@ -120,7 +114,7 @@ class SalesOrderController extends Controller
                             'is_cps' => 1
                         ]);
                     }
-                    foreach(DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get() as $line){
+                    foreach (DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get() as $line) {
                         ExportLine::create([
                             'export_id' => $header->export_id,
                             'store_id' => $header->store,
@@ -164,22 +158,22 @@ class SalesOrderController extends Controller
                     ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
                 }
                 $head[$i]['end'] = date("Y-m-d H:i:s");
-            }else{
-                if(!$this->is_console){
+            } else {
+                if (!$this->is_console) {
                     $separator = "\r\n";
-                }else{
+                } else {
                     $separator = "<br/>";
                 }
                 $output = '';
-                $output .= 'Running Schedule for  '.date('Y-m-d', strtotime($this->getVar('start'))).$separator;
-                if(count($head) > 0){
+                $output .= 'Running Schedule for  ' . date('Y-m-d', strtotime($this->getVar('start'))) . $separator;
+                if (count($head) > 0) {
                     $output .= "Completed at {$currentTime}{$separator}";
-                }else{
+                } else {
                     $output .= "Failed:{$separator}";
                     $output .= "Allowed time for sending is between{$separator}";
-                    $output .= $this->getVar('start')." and ".$this->getVar('end').$separator;
+                    $output .= $this->getVar('start') . " and " . $this->getVar('end') . $separator;
                 }
-                
+
                 echo $output;
 
 
@@ -192,51 +186,68 @@ class SalesOrderController extends Controller
 
     private function _proccessLine(array $head)
     {
-
+        // As long as $line is true, the loop will be running
         $line = true;
-        $return['quantity'] = 0;
-        $return['total'] = 0;
-        $return['processed'] = 0;
+        $return = [
+            'quantity' => 0,
+            'total' => 0,
+            'processed' => 0,
+            'error' => []
+        ];
+
         $location = sprintf("%03d", $head['shop_id']);
+
         try {
-            $export_lines = ExportLine::where('export_id', $head['export_id'])->orderBy('itemno', 'asc')->get();
+            $export_lines = ExportLine::where('export_id', $head['export_id'])
+                ->orderBy('itemno', 'asc')
+                ->get();
+
             foreach ($export_lines as $baris) {
-                if ($line) {
-                    $bdate = date("Ymd", strtotime($baris->busidate));
-                    $bnum = sprintf("%04d", $return['processed']);
-                    $postdocumentid = (!empty($baris->sent_document_id) ? $baris->sent_document_id : "{$bdate}{$location}{$bnum}");
-                    $currentLine = [
-                        'postdocumentid' => $postdocumentid,
-                        'extdocno' => $baris->extdocno,
-                        'loccode' => $baris->loccode,
-                        'salestype' => $baris->salestype,
-                        'itemno' => $baris->itemno,
-                        'qty' => $baris->qty,
-                        'unitprice' => $baris->unitprice,
-                        'totalprice' => $baris->totalprice,
-                        'desc' => $baris->desc
-                    ];
-                    if($baris->busidate < '2023-08-01'){
-                        $currentLine['postdocumentid'] = $baris->id;
-                    }
-                    $this->_sendDataLines($currentLine);
-                    $baris->sent_document_id = $currentLine['postdocumentid'];
-                    $baris->save();
-                    if($baris->salestype != 21){
-                        $return['quantity'] = $return['quantity'] + $baris->qty;
-                        $return['total'] = $return['total'] + $baris->totalprice;
-                    }
-                    $return['processed']++;
+                # stop the loop when $line is false
+                if (!$line) {
+                    break 1;
                 }
+                $bdate = date("Ymd", strtotime($baris->busidate));
+                $bnum = sprintf("%04d", $return['processed']);
+                $postdocumentid = (!empty($baris->sent_document_id) ? $baris->sent_document_id : "{$bdate}{$location}{$bnum}");
+
+                $currentLine = [
+                    'postdocumentid' => $postdocumentid,
+                    'extdocno' => $baris->extdocno,
+                    'loccode' => $baris->loccode,
+                    'salestype' => $baris->salestype,
+                    'itemno' => $baris->itemno,
+                    'qty' => $baris->qty,
+                    'unitprice' => $baris->unitprice,
+                    'totalprice' => $baris->totalprice,
+                    'desc' => $baris->desc
+                ];
+
+                if ($baris->busidate < '2023-08-01') {
+                    $currentLine['postdocumentid'] = $baris->id;
+                }
+
+                $this->_sendDataLines($currentLine);
+
+                $baris->sent_document_id = $currentLine['postdocumentid'];
+                $baris->save();
+
+                if ($baris->salestype != 21) {
+                    $return['quantity'] += $baris->qty;
+                    $return['total'] += $baris->totalprice;
+                }
+
+                $return['processed']++;
             }
         } catch (Exception $ex) {
             $line = false;
             $message = 'Line Error: ' . $ex->getMessage();
             $return['error'][] = $message;
+
             LogExportNav::create([
                 'export_id' => $head['export_id'],
                 'message' => $message,
-                'quantity' => $return['quantity'] ,
+                'quantity' => $return['quantity'],
                 'total' => $return['total'],
                 'created_at' => $this->getVar('time')
             ]);
@@ -245,69 +256,43 @@ class SalesOrderController extends Controller
         return $return;
     }
 
-    private function _sendDataHeader(array $params)
+    private function sendDataHeader(array $params)
     {
-        //dd($params);
-        //To Communicate With the Web Service Using NTLM You Must Override the HTTP with NTLMSteam to allow Windows Authentication to work.
-        //See https://thomas.rabaix.net/blog/2008/03/using-soap-php-with-ntlm-authentication for full Explanation
         stream_wrapper_unregister('http');
-        stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");
+        stream_wrapper_register('http', 'App\Helpers\NTLMStream');
 
-        // //Ensure you can get a list of services by entering the Services URL in a Web Browser - No Point Continuing until you verify that The Web Services is running.
-        // $servicesURL = 'http://172.16.6.206:7047/DynamicsNAV90/WS/Services';
-
-        // Initialize Soap Client URL
         $baseURL = env('NAV_BASE_URL', true);
+        $companyName = env("NAV_COMPANY_NAME", false);
 
-        //Define Company Name - This value will need to be urlencoded
-        $CompanyName = env("NAV_COMPANY_NAME", false);
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
 
-        //>>>>>>>>>>>>>>>>>Item Query>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        $pageURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
-
-        $codeunitURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
-
-        // Initialize Page Soap Client
-        //dd($codeunitURL);
         $codeunit = new NTLMSoapClient($codeunitURL);
 
         $result = $codeunit->APIImportSOHeader($params);
 
+        stream_wrapper_restore('http');
 
         return $result;
-        // Put back the HTTP protocal to esure we do not affect other operations.
-        stream_wrapper_restore('http');
     }
 
-    private function _sendDataLines(array $params)
+    private function sendDataLines(array $params)
     {
-        //dd($params);
-        //To Communicate With the Web Service Using NTLM You Must Override the HTTP with NTLMSteam to allow Windows Authentication to work.
-        //See https://thomas.rabaix.net/blog/2008/03/using-soap-php-with-ntlm-authentication for full Explanation
         stream_wrapper_unregister('http');
         stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");
 
-        // //Ensure you can get a list of services by entering the Services URL in a Web Browser - No Point Continuing until you verify that The Web Services is running.
-        // $servicesURL = 'http://172.16.6.206:7047/DynamicsNAV90/WS/Services';
-
-        // Initialize Soap Client URL
         $baseURL = env('NAV_BASE_URL', false);
+        $companyName = env("NAV_COMPANY_NAME", false);
 
-        //Define Company Name - This value will need to be urlencoded
-        $CompanyName = env("NAV_COMPANY_NAME", false);
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
 
-        //>>>>>>>>>>>>>>>>>Item Query>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-        $pageURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
-
-        $codeunitURL = $baseURL . rawurlencode($CompanyName) . '/Codeunit/NAVSync';
-
-        // Initialize Page Soap Client
         $codeunit = new NTLMSoapClient($codeunitURL);
 
         $result = $codeunit->APIImportSOLine($params);
 
-        return $result;
-        // Put back the HTTP protocal to esure we do not affect other operations.
         stream_wrapper_restore('http');
+
+        return $result;
     }
 }
