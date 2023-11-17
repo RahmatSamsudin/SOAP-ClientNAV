@@ -11,7 +11,8 @@ use App\Models\DataPOS;
 use App\Models\LogExportNav;
 use App\Models\DataTransaction;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Hash;
 use Carbon\Carbon;
 
 use Exception;
@@ -30,6 +31,14 @@ class SalesOrderController extends Controller
     public $is_console;
 
 
+    /**
+     * Retrieves and sends the NAV export data via email.
+     *
+     * @param int $console Flag to indicate if the function is being run in a console.
+     * @param int $waste Flag to indicate if the function should include waste data.
+     * @throws Some_Exception_Class Exception thrown if there is an error sending the email.
+     * @return void
+     */
     public function index($console = 0, $waste = 0)
     {
         set_time_limit(0);
@@ -53,20 +62,10 @@ class SalesOrderController extends Controller
             ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
             ->orderBy('sales_date', 'asc')
             ->orderBy('store', 'asc');
-        
-        if($waste){
-            $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', '1')->get()));
-            $email = new NAVSend($head);
-        }else{
-            $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', '0')->get()));
-            $email = new NAVSend($head);
-        }
-        
 
-        if (count($this->skipped) > 0) {
-            $this->skipped = collect($this->skipped);
-            $this->_proccessHeader($this->skipped);
-        }
+        $isWaste = $waste ? '1' : '0';
+        $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
+        $email = new NAVSend($head, $waste);
 
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa3.jkt@sushitei.co.id'];
@@ -84,95 +83,49 @@ class SalesOrderController extends Controller
         return $this->{$name};
     }
 
-    private function _proccessHeader(object $headers)
+    /**
+     * Processes the header data.
+     *
+     * @param object $headers The header data to be processed.
+     * @throws Exception If an error occurs during processing.
+     * @return array The processed header data.
+     */
+    protected function _processHeader(object $headers)
     {
         $head = [];
         foreach ($headers as $i => $header) {
             $currentTime = date("Y-m-d H:i:s");
-            // Processing Sales Header
-            if ($currentTime >= $this->getVar('start') && $currentTime <= $this->getVar('end')) {
+            if ($this->_isWithinTimeRange($currentTime)) {
                 $this->setVar('time', $currentTime);
-                $success = false;
-                $head[$i]['custno'] = $header->stores->nav_code;
-                $head[$i]['orderdate'] = $header->sales_date;
-                $head[$i]['extdocno'] = $header->document_number;
-                $head[$i]['shop_name'] = $header->stores->store_name;
-                $head[$i]['export_id'] = $header->export_id;
-                $head[$i]['shop_id'] = $header->store;
-                $head[$i]['location_id'] = $header->stores->location_id;
-                $head[$i]['is_success'] = 0;
-                $head[$i]['start'] = $currentTime;
-                $head[$i]['end'] = $currentTime;
-                $checkExportLine = ExportLine::where('export_id', $header->export_id)->get();
-                if ($checkExportLine->count() == 0) {
-                    foreach (DataTransaction::daily($header->store, $header->sales_date) as $line) {
-                        ExportLine::create([
-                            'export_id' => $header->export_id,
-                            'store_id' => $header->store,
-                            'busidate' => $header->sales_date,
-                            'extdocno' => $header->document_number,
-                            'loccode' => $header->stores->nav_code,
-                            'salestype' => $line->col2,
-                            'itemno' => $line->item_code,
-                            'qty' => $line->sumqty,
-                            'unitprice' =>  $line->price,
-                            'totalprice' =>  $line->sumqtyprice,
-                            'desc' =>  $line->item_name,
-                            'is_cps' => 1
-                        ]);
-                    }
-                    foreach (DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get() as $line) {
-                        ExportLine::create([
-                            'export_id' => $header->export_id,
-                            'store_id' => $header->store,
-                            'busidate' => $header->sales_date,
-                            'extdocno' => $header->document_number,
-                            'loccode' => $header->stores->nav_code,
-                            'salestype' => $line['sales_type_id'],
-                            'itemno' => $line['item_code'],
-                            'qty' => $line['sales_qty'],
-                            'unitprice' =>  $line['sales_price'],
-                            'totalprice' =>  $line['sales_price'] * $line['sales_qty'],
-                            'desc' => $line['item_name']
-                        ]);
-                    }
-                }
+                $head[$i] = $this->prepareData($header, $currentTime);
 
                 try {
                     $success = $this->_sendDataHeader($head[$i]);
+                    if ($success) {
+                        $head[$i]['line'] = $header->is_waste ? $this->_proccessLineWaste($head[$i]) : $this->_processLine($head[$i]);
+                        if (empty($head[$i]['line']['error'])) {
+                            $head[$i]['is_success'] = 1;
+                            ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
+                            LogExportNav::create([
+                                'export_id' => $header->export_id,
+                                'message' => 'Success',
+                                'quantity' => $head[$i]['line']['quantity'],
+                                'total' => $head[$i]['line']['total'],
+                                'created_at' => $currentTime
+                            ]);
+                        } else {
+                            ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
+                        }
+                    }
                 } catch (Exception $ex) {
                     $head[$i]['error'][] = $ex->getMessage();
                 }
 
-
-                // Processing Sales Line
-                if ($success) {
-                    $head[$i]['line'] = $this->_proccessLine($head[$i]);
-                }
-
-                // Count Processing Data + Error Data
-                if ($success && empty($head[$i]['line']['error'])) {
-                    $head[$i]['is_success'] = 1;
-                    ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
-                    LogExportNav::create([
-                        'export_id' => $header->export_id,
-                        'message' => 'Success',
-                        'quantity' => $head[$i]['line']['quantity'],
-                        'total' => $head[$i]['line']['total'],
-                        'created_at' => $currentTime
-                    ]);
-                } else {
-                    ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
-                }
                 $head[$i]['end'] = date("Y-m-d H:i:s");
             } else {
-                if (!$this->is_console) {
-                    $separator = "\r\n";
-                } else {
-                    $separator = "<br/>";
-                }
+                $separator = $this->is_console ? "<br/>" : "\r\n";
                 $output = '';
-                $output .= 'Running Schedule for  ' . date('Y-m-d', strtotime($this->getVar('start'))) . $separator;
+                $output .= 'Running Schedule for ' . date('Y-m-d', strtotime($this->getVar('start'))) . $separator;
                 if (count($head) > 0) {
                     $output .= "Completed at {$currentTime}{$separator}";
                 } else {
@@ -182,16 +135,133 @@ class SalesOrderController extends Controller
                 }
 
                 echo $output;
-
-
-                break 1;
+                break;
             }
         }
 
         return $head;
     }
 
-    private function _proccessLine(array $head)
+    /**
+     * Check if the given time is within a specified time range.
+     *
+     * @param string $currentTime The current time to check.
+     * @return bool Returns true if the current time is within the specified range, false otherwise.
+     */
+    private function _isWithinTimeRange(string $currentTime): bool
+    {
+        $start = strtotime($this->getVar('start'));
+        $end = strtotime($this->getVar('end'));
+        $current = strtotime($currentTime);
+
+        return $current >= $start && $current <= $end;
+    }
+
+    /**
+     * Prepare the data for processing.
+     *
+     * @param object $header The header object.
+     * @param mixed $currentTime The current time.
+     * @throws Some_Exception_Class Description of exception.
+     * @return array The prepared data.
+     */
+    protected function prepareData(object $header, $currentTime)
+    {
+        $head = [
+            'custno' => $header->stores->nav_code,
+            'orderdate' => $header->sales_date,
+            'extdocno' => $header->document_number,
+            'shop_name' => $header->stores->store_name,
+            'export_id' => $header->export_id,
+            'shop_id' => $header->store,
+            'location_id' => $header->stores->location_id,
+            'is_success' => 0,
+            'start' => $currentTime,
+            'end' => $currentTime,
+        ];
+
+        $checkExportLine = ExportLine::where('export_id', $header->export_id)->count();
+
+        if ($header->is_waste) {
+            if ($checkExportLine == 0) {
+                $wasteData = DataTransaction::waste($header->store, $header->sales_date);
+                $exportLines = [];
+                foreach ($wasteData as $line) {
+                    $exportLines[] = [
+                        'export_id' => $header->export_id,
+                        'store_id' => $header->store,
+                        'busidate' => $header->sales_date,
+                        'extdocno' => $header->document_number,
+                        'loccode' => $header->stores->nav_code,
+                        'salestype' => 99,
+                        'itemno' => $line->item_code,
+                        'qty' => $line->sumqty,
+                        'unitprice' => $line->price,
+                        'totalprice' => $line->sumqtyprice,
+                        'desc' => $line->item_name,
+                        'is_cps' => 1
+                    ];
+                }
+                ExportLine::insert($exportLines);
+            }
+        } else {
+            if ($checkExportLine == 0) {
+                $dailyData = DataTransaction::daily($header->store, $header->sales_date);
+                $posData = DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get();
+
+                $exportLines = [];
+
+                foreach ($dailyData as $line) {
+                    $exportLines[] = [
+                        'export_id' => $header->export_id,
+                        'store_id' => $header->store,
+                        'busidate' => $header->sales_date,
+                        'extdocno' => $header->document_number,
+                        'loccode' => $header->stores->nav_code,
+                        'salestype' => $line->col2,
+                        'itemno' => $line->item_code,
+                        'qty' => $line->sumqty,
+                        'unitprice' => $line->price,
+                        'totalprice' => $line->sumqtyprice,
+                        'desc' => $line->item_name,
+                        'is_cps' => 1
+                    ];
+                }
+
+                foreach ($posData as $line) {
+                    $exportLines[] = [
+                        'export_id' => $header->export_id,
+                        'store_id' => $header->store,
+                        'busidate' => $header->sales_date,
+                        'extdocno' => $header->document_number,
+                        'loccode' => $header->stores->nav_code,
+                        'salestype' => $line['sales_type_id'],
+                        'itemno' => $line['item_code'],
+                        'qty' => $line['sales_qty'],
+                        'unitprice' => $line['sales_price'],
+                        'totalprice' => $line['sales_price'] * $line['sales_qty'],
+                        'desc' => $line['item_name']
+                    ];
+                }
+
+                ExportLine::insert($exportLines);
+            }
+        }
+
+
+        return $head;
+    }
+
+
+
+    /**
+     * Process each line in the given array.
+     *
+     * @param array $head the array containing the line data
+     * @throws Exception if an error occurs during processing
+     * @return array the processed line data
+     */
+    protected function _proccessLine(array $head)
     {
         // As long as $line is true, the loop will be running
         $line = true;
@@ -263,7 +333,71 @@ class SalesOrderController extends Controller
         return $return;
     }
 
-    private function sendDataHeader(array $params)
+    /**
+     * Processes the waste data.
+     *
+     * @param array $head The head data.
+     * @throws \Throwable If an error occurs during the process.
+     * @return array The processed waste data.
+     */
+    protected function processWaste(array $head): array
+    {
+        $return = [
+            'quantity' => 0,
+            'total' => 0,
+            'processed' => 0,
+            'error' => []
+        ];
+
+        $now = Carbon::now()->format('Y-m-d');
+        $hashed = Hash::make($now, [
+            'rounds' => 10,
+        ]);
+        $key = $hashed . '|bot';
+
+        try {
+            $exportLines = ExportLine::select('busidate AS `date`', 'itemno AS material', 'desc AS description', 'qty AS quantity', "'portion' AS uom", "'{$head['custno']}' AS location", "'' as notes")
+                ->where('export_id', $head['export_id'])
+                ->where('salestype', 99)
+                ->orderBy('itemno', 'asc')
+                ->get();
+            $response = Http::withHeader('Key-Access', $key)
+                ->post('http://172.16.6.217:12211/$/waste', ['line' => $exportLines->toArray()]);
+
+            if ($response->failed()) {
+                $response->throw();
+            }
+            $return = [
+                'quantity' => $exportLines->sum('qty'),
+                'total' => $exportLines->sum('totalprice'),
+                'processed' => $exportLines->count(),
+                'error' => []
+            ];
+        } catch (\Throwable $ex) {
+            $message = 'Line Error: ' . $ex->getMessage();
+            $return['error'][] = $message;
+
+            LogExportNav::create([
+                'export_id' => $head['export_id'],
+                'message' => $message,
+                'quantity' => $return['quantity'],
+                'total' => $return['total'],
+                'created_at' => $this->getVar('time')
+            ]);
+        }
+
+        return $return;
+    }
+
+
+    /**
+     * Sends the data header using the given parameters.
+     *
+     * @param array $params The parameters used to send the data header.
+     * @throws Some_Exception_Class A description of the exception that can be thrown.
+     * @return mixed The result of the APIImportSOHeader function.
+     */
+    protected function sendDataHeader(array $params)
     {
         stream_wrapper_unregister('http');
         stream_wrapper_register('http', 'App\Helpers\NTLMStream');
@@ -283,7 +417,14 @@ class SalesOrderController extends Controller
         return $result;
     }
 
-    private function sendDataLines(array $params)
+    /**
+     * Sends data lines to the specified URL and returns the result.
+     *
+     * @param array $params the parameters to be sent
+     * @throws Exception if the http stream wrapper registration fails
+     * @return mixed the result of the API import
+     */
+    protected function sendDataLines(array $params)
     {
         stream_wrapper_unregister('http');
         stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");

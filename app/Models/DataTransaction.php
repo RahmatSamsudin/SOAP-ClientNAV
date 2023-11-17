@@ -74,6 +74,31 @@ class DataTransaction extends Model
 
     ORDER BY
         it.item_code ASC"));
+    }
+
+    public static function waste($store, $date)
+    {
+        return DB::select(DB::raw("
+    SELECT
+        '3' AS col2,
+        DATE_FORMAT( trx_date, '%m/%d/%Y' ) AS dateformated,
+        colour_name,
+        item_code,
+				item_name,
+        SUM( qty ) AS sumqty,
+				price,
+        SUM( qty * price ) AS sumqtyprice
+    FROM
+        in_out_trx
+		
+		WHERE store_id = '{$store}' AND trx_date='{$date}'
+        AND inorout = 2
+        GROUP BY
+        item_code,
+        price
+
+    ORDER BY
+        item_code ASC"));
 
     }
     public static function dailyBackup2($document)
@@ -92,7 +117,6 @@ class DataTransaction extends Model
     AND inorout=1
     GROUP BY item_code,price
     ORDER BY item_code ASC"));
-
     }
 
     public static function dailyBack($store, $date)
@@ -125,7 +149,5 @@ class DataTransaction extends Model
         WHERE in_out_trx.qty IS NOT NULL
         GROUP BY in_out_trx.trx_date, colour_item.item_id, colour_item.item_code,  in_out_trx.inorout
         ORDER BY in_out_trx.trx_date, colour_item.item_code, in_out_trx.inorout LIMIT 0,10"));
-
     }
-
 }

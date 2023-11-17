@@ -12,15 +12,17 @@ class NAVSend extends Mailable
     use Queueable, SerializesModels;
 
     public $data;
+    public $waste;
     /**
      * Create a new message instance.
      *
      * @return void
      */
-    public function __construct(Array $data)
+    public function __construct(Array $data, $waste = 0)
     {
         //
         $this->data = $data;
+        $this->waste = $waste;
     }
 
     /**
@@ -30,7 +32,12 @@ class NAVSend extends Mailable
      */
     public function build()
     {
-        return $this->from('it.helpdesk@sushitei.co.id', 'CPS to NAV 2023 Daily Report')
+        if($this->waste){
+            return $this->from('it.helpdesk@sushitei.co.id', 'CPS to NAV 2023 Waste Report')
+                ->view('emails.waste');
+        }else{
+            return $this->from('it.helpdesk@sushitei.co.id', 'CPS to NAV 2023 Daily Report')
                 ->view('emails.daily');
+        }
     }
 }
