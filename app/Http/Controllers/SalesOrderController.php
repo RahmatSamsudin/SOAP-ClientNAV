@@ -13,6 +13,7 @@ use App\Models\DataTransaction;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 use Exception;
@@ -50,8 +51,8 @@ class SalesOrderController extends Controller
 
         $today = Carbon::now();
         $date = $today->format('Y-m-d');
-        $start = $date . ' 22:00:00';
-        $end = $today->addDays(1)->format('Y-m-d') . ' 06:00:00';
+        $this->setVar('start', $date . ' 23:00:00');
+        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 06:00:00');
 
         $query = ExportNAV::with('stores')
             ->where('export_status', 0)
@@ -61,14 +62,14 @@ class SalesOrderController extends Controller
             ->whereDate('sales_date', '>=', '2023-01-01')
             ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
             ->orderBy('sales_date', 'asc')
-            ->orderBy('store', 'asc');
+            ->orderBy('store', 'asc')->limit(1);
 
         $isWaste = $waste ? '1' : '0';
         $head = $this->proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
         $email = new NAVSend($head, $waste);
 
         if (count($head) > 0) {
-            $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa3.jkt@sushitei.co.id'];
+            $recipients = ['rahmat@sushitei.co.id'];
             Mail::to($recipients)->send($email);
         }
     }
@@ -100,9 +101,9 @@ class SalesOrderController extends Controller
                 $head[$i] = $this->prepareData($header, $currentTime);
 
                 try {
-                    $success = $this->_sendDataHeader($head[$i]);
+                    $success = $this->sendDataHeader($head[$i]);
                     if ($success) {
-                        $head[$i]['line'] = $header->is_waste ? $this->proccessLineWaste($head[$i]) : $this->processLine($head[$i]);
+                        $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
                         if (empty($head[$i]['line']['error'])) {
                             $head[$i]['is_success'] = 1;
                             ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
@@ -340,7 +341,7 @@ class SalesOrderController extends Controller
      * @throws \Throwable If an error occurs during the process.
      * @return array The processed waste data.
      */
-    private function processWaste(array $head): array
+    private function proccessWaste(array $head): array
     {
         $return = [
             'quantity' => 0,
@@ -350,19 +351,23 @@ class SalesOrderController extends Controller
         ];
 
         $now = Carbon::now()->format('Y-m-d');
-        $hashed = Hash::make($now, [
+        $hashed = Hash::make($now.'|bot', [
             'rounds' => 10,
         ]);
-        $key = $hashed . '|bot';
+        
 
         try {
-            $exportLines = ExportLine::select('busidate AS `date`', 'itemno AS material', 'desc AS description', 'qty AS quantity', "'portion' AS uom", "'{$head['custno']}' AS location", "'' as notes")
+            $exportLines = ExportLine::select('busidate AS date', 'itemno AS material', 'desc AS description', 'qty AS quantity')
+                ->addSelect(DB::raw("'portion' AS uom"))
+                ->addSelect(DB::raw("'{$head['custno']}' AS location"))
+                ->addSelect(DB::raw("'' as notes"))
                 ->where('export_id', $head['export_id'])
                 ->where('salestype', 99)
                 ->orderBy('itemno', 'asc')
                 ->get();
-            $response = Http::withHeader('Key-Access', $key)
-                ->post('http://172.16.6.217:12211/$/waste', ['line' => $exportLines->toArray()]);
+            
+            $response = Http::withHeaders(['Key-Access' => $hashed])
+                ->post('http://172.16.6.217:12210/$/waste', ['line' => $exportLines->toArray()]);
 
             if ($response->failed()) {
                 $response->throw();
