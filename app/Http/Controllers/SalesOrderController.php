@@ -90,7 +90,7 @@ class SalesOrderController extends Controller
      * @throws Exception If an error occurs during processing.
      * @return array The processed header data.
      */
-    protected function _processHeader(object $headers)
+    private function _processHeader(object $headers)
     {
         $head = [];
         foreach ($headers as $i => $header) {
@@ -165,7 +165,7 @@ class SalesOrderController extends Controller
      * @throws Some_Exception_Class Description of exception.
      * @return array The prepared data.
      */
-    protected function prepareData(object $header, $currentTime)
+    private function prepareData(object $header, $currentTime)
     {
         $head = [
             'custno' => $header->stores->nav_code,
@@ -261,7 +261,7 @@ class SalesOrderController extends Controller
      * @throws Exception if an error occurs during processing
      * @return array the processed line data
      */
-    protected function _proccessLine(array $head)
+    private function _proccessLine(array $head)
     {
         // As long as $line is true, the loop will be running
         $line = true;
@@ -340,7 +340,7 @@ class SalesOrderController extends Controller
      * @throws \Throwable If an error occurs during the process.
      * @return array The processed waste data.
      */
-    protected function processWaste(array $head): array
+    private function processWaste(array $head): array
     {
         $return = [
             'quantity' => 0,
@@ -397,7 +397,7 @@ class SalesOrderController extends Controller
      * @throws Some_Exception_Class A description of the exception that can be thrown.
      * @return mixed The result of the APIImportSOHeader function.
      */
-    protected function sendDataHeader(array $params)
+    private function sendDataHeader(array $params)
     {
         stream_wrapper_unregister('http');
         stream_wrapper_register('http', 'App\Helpers\NTLMStream');
@@ -424,7 +424,7 @@ class SalesOrderController extends Controller
      * @throws Exception if the http stream wrapper registration fails
      * @return mixed the result of the API import
      */
-    protected function sendDataLines(array $params)
+    private function sendDataLines(array $params)
     {
         stream_wrapper_unregister('http');
         stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");
