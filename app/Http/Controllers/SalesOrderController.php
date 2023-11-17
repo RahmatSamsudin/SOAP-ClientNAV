@@ -64,7 +64,7 @@ class SalesOrderController extends Controller
             ->orderBy('store', 'asc');
 
         $isWaste = $waste ? '1' : '0';
-        $head = $this->_proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
+        $head = $this->proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
         $email = new NAVSend($head, $waste);
 
         if (count($head) > 0) {
@@ -90,19 +90,19 @@ class SalesOrderController extends Controller
      * @throws Exception If an error occurs during processing.
      * @return array The processed header data.
      */
-    private function _processHeader(object $headers)
+    private function processHeader(object $headers)
     {
         $head = [];
         foreach ($headers as $i => $header) {
             $currentTime = date("Y-m-d H:i:s");
-            if ($this->_isWithinTimeRange($currentTime)) {
+            if ($this->isWithinTimeRange($currentTime)) {
                 $this->setVar('time', $currentTime);
                 $head[$i] = $this->prepareData($header, $currentTime);
 
                 try {
                     $success = $this->_sendDataHeader($head[$i]);
                     if ($success) {
-                        $head[$i]['line'] = $header->is_waste ? $this->_proccessLineWaste($head[$i]) : $this->_processLine($head[$i]);
+                        $head[$i]['line'] = $header->is_waste ? $this->proccessLineWaste($head[$i]) : $this->processLine($head[$i]);
                         if (empty($head[$i]['line']['error'])) {
                             $head[$i]['is_success'] = 1;
                             ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
@@ -148,7 +148,7 @@ class SalesOrderController extends Controller
      * @param string $currentTime The current time to check.
      * @return bool Returns true if the current time is within the specified range, false otherwise.
      */
-    private function _isWithinTimeRange(string $currentTime): bool
+    private function isWithinTimeRange(string $currentTime): bool
     {
         $start = strtotime($this->getVar('start'));
         $end = strtotime($this->getVar('end'));
@@ -261,7 +261,7 @@ class SalesOrderController extends Controller
      * @throws Exception if an error occurs during processing
      * @return array the processed line data
      */
-    private function _proccessLine(array $head)
+    private function proccessLine(array $head)
     {
         // As long as $line is true, the loop will be running
         $line = true;
