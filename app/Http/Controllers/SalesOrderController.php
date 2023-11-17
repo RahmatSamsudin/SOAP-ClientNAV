@@ -90,7 +90,7 @@ class SalesOrderController extends Controller
      * @throws Exception If an error occurs during processing.
      * @return array The processed header data.
      */
-    private function processHeader(object $headers)
+    private function proccessHeader(object $headers)
     {
         $head = [];
         foreach ($headers as $i => $header) {

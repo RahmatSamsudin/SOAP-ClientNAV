@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Http\Controllers\SalesOrderController as SOC;
+use App\Http\Controllers\SalesOrderController as SW;
 
 class SyncWaste extends Command
 {
@@ -38,7 +38,7 @@ class SyncWaste extends Command
      */
     public function handle()
     {
-        $soc = new SOC();
+        $soc = new SW();
         return $soc->index(1,1);
     }
 }
