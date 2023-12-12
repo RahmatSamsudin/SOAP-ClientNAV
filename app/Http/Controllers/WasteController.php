@@ -19,7 +19,7 @@ use Carbon\Carbon;
 use Exception;
 use SoapFault;
 
-class SalesOrderController extends Controller
+class WasteController extends Controller
 {
     private $date = '';
     private $start = '';
@@ -40,9 +40,10 @@ class SalesOrderController extends Controller
      * @throws Some_Exception_Class Exception thrown if there is an error sending the email.
      * @return void
      */
-    public function index($console = 0, $waste = 0)
+    public function index($console = 0, $waste = 1)
     {
         set_time_limit(0);
+        
         date_default_timezone_set('Asia/Jakarta');
 
         if ($console) {
@@ -51,13 +52,13 @@ class SalesOrderController extends Controller
 
         $today = Carbon::now();
         $date = $today->format('Y-m-d');
-        $this->setVar('start', $date . ' 23:00:00');
-        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 06:00:00');
+        $this->setVar('start', $date . ' 06:00:00');
+        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 22:59:00');
 
         $query = ExportNAV::with('stores')
             ->where('export_status', 0)
             ->whereHas('stores', function ($query) {
-                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22]);
+                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12]);
             })
             ->whereDate('sales_date', '>=', '2023-01-01')
             ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
@@ -71,6 +72,12 @@ class SalesOrderController extends Controller
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa.jkt@sushitei.co.id'];
             Mail::to($recipients)->send($email);
+        }else{
+            $separator = $this->is_console ? "\r\n" : "<br/>";
+            $output = '';
+            $output .= 'No data to proccess ' . $separator;
+            
+            echo $output;
         }
     }
 
@@ -362,10 +369,16 @@ class SalesOrderController extends Controller
                 ->addSelect(DB::raw("'portion' AS uom"))
                 ->addSelect(DB::raw("'{$head['custno']}' AS location"))
                 ->addSelect(DB::raw("'' as notes"))
+                ->addSelect('totalprice')
                 ->where('export_id', $head['export_id'])
                 ->where('salestype', 99)
                 ->orderBy('itemno', 'asc')
                 ->get();
+            foreach($exportLines as $line){
+                $return['quantity'] += $line['quantity'];
+                $return['total'] += $line['totalprice'];
+                $return['processed']++;
+            }
             
             $response = Http::withHeaders(['Key-Access' => $hashed])
                 ->post('http://172.16.6.217:12210/$/waste', ['line' => $exportLines->toArray()]);
@@ -373,12 +386,7 @@ class SalesOrderController extends Controller
             if ($response->failed()) {
                 $response->throw();
             }
-            $return = [
-                'quantity' => $exportLines->sum('qty'),
-                'total' => $exportLines->sum('totalprice'),
-                'processed' => $exportLines->count(),
-                'error' => []
-            ];
+            
         } catch (\Throwable $ex) {
             $message = 'Line Error: ' . $ex->getMessage();
             $return['error'][] = $message;

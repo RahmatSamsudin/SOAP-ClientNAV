@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Http\Controllers\SalesOrderController as SW;
+use App\Http\Controllers\WasteController as SW;
 
 class SyncWaste extends Command
 {
