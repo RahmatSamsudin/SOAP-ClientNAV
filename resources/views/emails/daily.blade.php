@@ -4,7 +4,6 @@
         <thead>
             <th style="border: 1px solid #000; border-collapse: collapse;">Outlet</th>
             <th style="border: 1px solid #000; border-collapse: collapse;">Tanggal</th>
-            <th style="border: 1px solid #000; border-collapse: collapse;">Export ID</th>
             <th style="border: 1px solid #000; border-collapse: collapse;">Document No</th>
             <th style="border: 1px solid #000; border-collapse: collapse;">Status</th>
             <th style="border: 1px solid #000; border-collapse: collapse;">Quantity</th>
@@ -18,7 +17,6 @@
             <tr>
                 <td style="border: 1px solid #000; border-collapse: collapse;">{{ $head['shop_name'] }}</td>
                 <td style="border: 1px solid #000; border-collapse: collapse;">{{ $head['orderdate'] }}</td>
-                <td style="border: 1px solid #000; border-collapse: collapse;">{{ $head['export_id'] }}</td>
                 <td style="border: 1px solid #000; border-collapse: collapse;">{{ $head['extdocno'] }}</td>
                 <td style="border: 1px solid #000; border-collapse: collapse;">{{ $head['is_success'] ? 'Success' : 'Failed' }}</td>
                 @if($head['is_success'])

@@ -76,6 +76,54 @@ class DataTransaction extends Model
         it.item_code ASC"));
     }
 
+    public static function monthly($store, $start, $end)
+    {
+        return DB::select(DB::raw("
+    SELECT
+        '3' AS col2,
+        '$end' AS dateformated,
+        it.colour_name,
+        it.item_code,
+        CASE WHEN ot.sumqty IS NOT NULL THEN (it.sumqty-ot.sumqty) ELSE it.sumqty END  AS sumqty,
+        it.price,
+        it.item_name,
+        CASE WHEN ot.sumqtyprice IS NOT NULL THEN (it.sumqtyprice-ot.sumqtyprice) ELSE (it.sumqtyprice) END  AS sumqtyprice
+    FROM
+        (
+        SELECT
+        trx_date,
+        colour_name,
+        item_code,
+        item_name,
+        SUM( qty ) AS sumqty,
+        price,
+        SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice
+        FROM `in_out_trx`
+        WHERE store_id = '{$store}' AND trx_date BETWEEN '$start' AND '$end'
+        AND inorout = 1
+        GROUP BY
+        item_code,
+        price
+    ) it
+    LEFT JOIN (
+        SELECT
+        item_code,
+        SUM( qty ) AS sumqty,
+        SUM( in_out_trx.qty * in_out_trx.price ) AS sumqtyprice,
+        price
+        FROM `in_out_trx`
+        WHERE store_id = '{$store}' AND trx_date BETWEEN '$start' AND '$end'
+        AND inorout = 2
+        GROUP BY
+        item_code,
+        price
+    ) ot ON ot.item_code=it.item_code AND ot.price=it.price
+
+    ORDER BY
+        it.item_code ASC"));
+    }
+
+
     public static function waste($store, $date)
     {
         return DB::select(DB::raw("

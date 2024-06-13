@@ -28,10 +28,16 @@ class SalesOrderController extends Controller
     private $error = [];
     private $skipped = [];
     private $processed = [];
+    public $endOfMonth = null;
+    public $startOfMonth = null;
     public $running_number;
     public $is_console;
 
-
+    public function __construct()
+    {
+        $this->endOfMonth = Carbon::now()->subMonth()->endOfMonth()->format('Y-m-d');
+        $this->startOfMonth = Carbon::now()->subMonth()->startOfMonth()->format('Y-m-d');
+    }
     /**
      * Retrieves and sends the NAV export data via email.
      *
@@ -48,10 +54,10 @@ class SalesOrderController extends Controller
         if ($console) {
             $this->is_console = true;
         }
-
         $today = Carbon::now();
         $date = $today->format('Y-m-d');
-        $this->setVar('start', $date . ' 23:00:00');
+        $this->setVar('start', $date . ' 07:00:00');
+        #$this->setVar('end', $date . ' 17:00:00');
         $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 06:00:00');
 
         $query = ExportNAV::with('stores')
@@ -59,15 +65,18 @@ class SalesOrderController extends Controller
             ->whereHas('stores', function ($query) {
                 return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22]);
             })
-            ->whereDate('sales_date', '>=', '2023-01-01')
-            ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            ->whereDate('sales_date', '>=', $this->startOfMonth)
+            #->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            ->whereDate('sales_date', '<=', $this->endOfMonth)
             ->orderBy('sales_date', 'asc')
             ->orderBy('store', 'asc');
 
         $isWaste = $waste ? '1' : '0';
+        #dd($query->where('is_waste', '=', 0)->get(), $this->startOfMonth, $this->endOfMonth);
         $head = $this->proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
-        $email = new NAVSend($head, $waste);
-
+        
+        #$email = new NAVSend($head, $waste);
+        dd($head);
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa.jkt@sushitei.co.id'];
             Mail::to($recipients)->send($email);
@@ -99,30 +108,31 @@ class SalesOrderController extends Controller
             if ($this->isWithinTimeRange($currentTime)) {
                 $this->setVar('time', $currentTime);
                 $head[$i] = $this->prepareData($header, $currentTime);
-
-                try {
-                    $success = $this->sendDataHeader($head[$i]);
-                    if ($success) {
-                        $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
-                        if (empty($head[$i]['line']['error'])) {
-                            $head[$i]['is_success'] = 1;
-                            ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
-                            LogExportNav::create([
-                                'export_id' => $header->export_id,
-                                'message' => 'Success',
-                                'quantity' => $head[$i]['line']['quantity'],
-                                'total' => $head[$i]['line']['total'],
-                                'created_at' => $currentTime
-                            ]);
-                        } else {
-                            ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
-                        }
-                    }
-                } catch (Exception $ex) {
-                    $head[$i]['error'][] = $ex->getMessage();
-                }
+                // try {
+                    
+                //     $success = $this->sendDataHeader($head[$i]);
+                //     if ($success) {
+                //         $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
+                //         if (empty($head[$i]['line']['error'])) {
+                //             $head[$i]['is_success'] = 1;
+                //             ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
+                //             LogExportNav::create([
+                //                 'export_id' => $header->export_id,
+                //                 'message' => 'Success',
+                //                 'quantity' => $head[$i]['line']['quantity'],
+                //                 'total' => $head[$i]['line']['total'],
+                //                 'created_at' => $currentTime
+                //             ]);
+                //         } else {
+                //             ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
+                //         }
+                //     }
+                // } catch (Exception $ex) {
+                //     $head[$i]['error'][] = $ex->getMessage();
+                // }
 
                 $head[$i]['end'] = date("Y-m-d H:i:s");
+                continue;
             } else {
                 $separator = $this->is_console ? "<br/>" : "\r\n";
                 $output = '';
@@ -180,38 +190,15 @@ class SalesOrderController extends Controller
             'start' => $currentTime,
             'end' => $currentTime,
         ];
-
+        $theline = 0;
         $checkExportLine = ExportLine::where('export_id', $header->export_id)->count();
 
-        if ($header->is_waste) {
-            if ($checkExportLine == 0) {
-                $wasteData = DataTransaction::waste($header->store, $header->sales_date);
-                $exportLines = [];
-                foreach ($wasteData as $line) {
-                    $exportLines[] = [
-                        'export_id' => $header->export_id,
-                        'store_id' => $header->store,
-                        'busidate' => "{$header->sales_date}",
-                        'extdocno' => "{$header->document_number}",
-                        'loccode' => $header->stores->nav_code,
-                        'salestype' => 99,
-                        'itemno' => "{$line->item_code}",
-                        'qty' => $line->sumqty,
-                        'unitprice' => $line->price,
-                        'totalprice' => $line->sumqtyprice,
-                        'desc' => "{$line->item_name}",
-                        'is_cps' => 1
-                    ];
-                }
-                ExportLine::insert($exportLines);
-            }
-        } else {
-            if ($checkExportLine == 0) {
-                $dailyData = DataTransaction::daily($header->store, $header->sales_date);
-                $posData = DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get();
-
-                $exportLines = [];
-
+        if ($checkExportLine == 0) {
+            $dailyData = DataTransaction::daily($header->store, $header->sales_date);
+            $posData = DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get();
+            #dd($posData, $header);
+            $exportLines = [];
+            if($header->stores->need_cp){
                 foreach ($dailyData as $line) {
                     $exportLines[] = [
                         'export_id' => $header->export_id,
@@ -224,31 +211,34 @@ class SalesOrderController extends Controller
                         'qty' => $line->sumqty,
                         'unitprice' => $line->price,
                         'totalprice' => $line->sumqtyprice,
-                        'desc' => "{$line->item_name}",
+                        'desc' => trim($line->item_name),
                         'is_cps' => 1
                     ];
+                    $theline++;
                 }
-
-                foreach ($posData as $line) {
-                    $exportLines[] = [
-                        'export_id' => $header->export_id,
-                        'store_id' => $header->store,
-                        'busidate' => "{$header->sales_date}",
-                        'extdocno' => "{$header->document_number}",
-                        'loccode' => $header->stores->nav_code,
-                        'salestype' => $line['sales_type_id'],
-                        'itemno' => "{$line['item_code']}",
-                        'qty' => $line['sales_qty'],
-                        'unitprice' => $line['sales_price'],
-                        'totalprice' => $line['sales_price'] * $line['sales_qty'],
-                        'desc' => "{$line['item_name']}",
-                        'is_cps' => 0
-                    ];
-                }
-
-                ExportLine::insert($exportLines);
             }
+
+            foreach ($posData as $line) {
+                $exportLines[] = [
+                    'export_id' => $header->export_id,
+                    'store_id' => $header->store,
+                    'busidate' => "{$header->sales_date}",
+                    'extdocno' => "{$header->document_number}",
+                    'loccode' => $header->stores->nav_code,
+                    'salestype' => $line['sales_type_id'],
+                    'itemno' => "{$line['item_code']}",
+                    'qty' => $line['sales_qty'],
+                    'unitprice' => $line['sales_price'],
+                    'totalprice' => $line['sales_price'] * $line['sales_qty'],
+                    'desc' => trim($line['item_name']),
+                    'is_cps' => 0
+                ];
+                $theline++;
+            }
+
+            ExportLine::insert($exportLines);
         }
+        $head['lines'] = $theline;
 
 
         return $head;

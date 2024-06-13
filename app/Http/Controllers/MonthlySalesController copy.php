@@ -19,7 +19,7 @@ use Carbon\Carbon;
 use Exception;
 use SoapFault;
 
-class WasteController extends Controller
+class MonthlySalesController extends Controller
 {
     private $date = '';
     private $start = '';
@@ -40,10 +40,9 @@ class WasteController extends Controller
      * @throws Some_Exception_Class Exception thrown if there is an error sending the email.
      * @return void
      */
-    public function index($console = 0, $waste = 1)
+    public function index($console = 0, $waste = 0)
     {
         set_time_limit(0);
-        
         date_default_timezone_set('Asia/Jakarta');
 
         if ($console) {
@@ -52,32 +51,34 @@ class WasteController extends Controller
 
         $today = Carbon::now();
         $date = $today->format('Y-m-d');
-        $this->setVar('start', $date . ' 06:00:00');
-        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 22:59:00');
+        $this->setVar('start', $date . ' 07:00:00');
+        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 06:00:00');
 
         $query = ExportNAV::with('stores')
             ->where('export_status', 0)
+            ->where('is_waste', intval($waste))
             ->whereHas('stores', function ($query) {
-                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12]);
+                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22]);
             })
-            ->whereDate('sales_date', '>=', '2023-01-01')
-            ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
-            ->orderBy('sales_date', 'asc')
-            ->orderBy('store', 'asc');
+            ->whereDate('sales_date', '>=', '2024-01-01')
+            #->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            ->whereDate('sales_date', '<=', '2024-01-31')
+            // ->orderBy('sales_date', 'asc')
+            ->orderBy('store', 'asc')
+            // ->groupBy(store)
+            ->groupBy('store')
+            ->get();
+
+            dd($query->all());
+
 
         $isWaste = $waste ? '1' : '0';
-        $head = $this->proccessHeader(Collect($query->where('is_waste', '=', $isWaste)->get()));
-        $email = new NAVSend($head, $waste);
+        #$head = $this->proccessHeader(Collect($query->where('is_waste', '=', $isWaste)));
+        // $email = new NAVSend($head, $waste);
 
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa.jkt@sushitei.co.id'];
             Mail::to($recipients)->send($email);
-        }else{
-            $separator = $this->is_console ? "\r\n" : "<br/>";
-            $output = '';
-            $output .= 'No data to proccess ' . $separator;
-            
-            echo $output;
         }
     }
 
@@ -105,31 +106,34 @@ class WasteController extends Controller
             $currentTime = date("Y-m-d H:i:s");
             if ($this->isWithinTimeRange($currentTime)) {
                 $this->setVar('time', $currentTime);
-                $head[$i] = $this->prepareData($header, $currentTime);
+                // $head[$i] = $this->prepareData($header, $currentTime);
+                $test = $this->prepareData($header, $currentTime);
+                echo $header->stores->store_name.' - '.$test;
+                echo '<br>';
+                // try {
+                //     $success = $this->sendDataHeader($head[$i]);
+                //     if ($success) {
+                //         $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
+                //         if (empty($head[$i]['line']['error'])) {
+                //             $head[$i]['is_success'] = 1;
+                //             ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
+                //             LogExportNav::create([
+                //                 'export_id' => $header->export_id,
+                //                 'message' => 'Success',
+                //                 'quantity' => $head[$i]['line']['quantity'],
+                //                 'total' => $head[$i]['line']['total'],
+                //                 'created_at' => $currentTime
+                //             ]);
+                //         } else {
+                //             ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
+                //         }
+                //     }
+                // } catch (Exception $ex) {
+                //     $head[$i]['error'][] = $ex->getMessage();
+                // }
 
-                try {
-                    $success = $this->sendDataHeader($head[$i]);
-                    if ($success) {
-                        $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
-                        if (empty($head[$i]['line']['error'])) {
-                            $head[$i]['is_success'] = 1;
-                            ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
-                            LogExportNav::create([
-                                'export_id' => $header->export_id,
-                                'message' => 'Success',
-                                'quantity' => $head[$i]['line']['quantity'],
-                                'total' => $head[$i]['line']['total'],
-                                'created_at' => $currentTime
-                            ]);
-                        } else {
-                            ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
-                        }
-                    }
-                } catch (Exception $ex) {
-                    $head[$i]['error'][] = $ex->getMessage();
-                }
 
-                $head[$i]['end'] = date("Y-m-d H:i:s");
+                // $head[$i]['end'] = date("Y-m-d H:i:s");
             } else {
                 $separator = $this->is_console ? "<br/>" : "\r\n";
                 $output = '';
@@ -191,6 +195,7 @@ class WasteController extends Controller
         $checkExportLine = ExportLine::where('export_id', $header->export_id)->count();
 
         if ($header->is_waste) {
+            return 0;
             if ($checkExportLine == 0) {
                 $wasteData = DataTransaction::waste($header->store, $header->sales_date);
                 $exportLines = [];
@@ -214,7 +219,18 @@ class WasteController extends Controller
             }
         } else {
             if ($checkExportLine == 0) {
-                $dailyData = DataTransaction::daily($header->store, $header->sales_date);
+
+                // Range Date Month 
+                $start_month = Carbon::parse($header->sales_date)->startOfMonth();
+                $end_month = Carbon::parse($header->sales_date)->endOfMonth();
+                #$dailyData = DataTransaction::daily($header->store, $header->sales_date);
+                $dailyData = DataTransaction::monthly($header->store, $start_month, $end_month);
+
+                return collect($dailyData)->sum('sumqtyprice');
+                #dd(collect($dailyData)->sum('sumqtyprice'), $header);
+                #dd($dailyData, $header);
+
+
                 $posData = DataPOS::transaction($header->store, $header->sales_date, $header->stores->location_id)->get();
 
                 $exportLines = [];
@@ -369,16 +385,10 @@ class WasteController extends Controller
                 ->addSelect(DB::raw("'portion' AS uom"))
                 ->addSelect(DB::raw("'{$head['custno']}' AS location"))
                 ->addSelect(DB::raw("'' as notes"))
-                ->addSelect('totalprice')
                 ->where('export_id', $head['export_id'])
                 ->where('salestype', 99)
                 ->orderBy('itemno', 'asc')
                 ->get();
-            foreach($exportLines as $line){
-                $return['quantity'] += $line['quantity'];
-                $return['total'] += $line['totalprice'];
-                $return['processed']++;
-            }
             
             $response = Http::withHeaders(['Key-Access' => $hashed])
                 ->post('http://172.16.6.217:12210/$/waste', ['line' => $exportLines->toArray()]);
@@ -386,7 +396,12 @@ class WasteController extends Controller
             if ($response->failed()) {
                 $response->throw();
             }
-            
+            $return = [
+                'quantity' => $exportLines->sum('qty'),
+                'total' => $exportLines->sum('totalprice'),
+                'processed' => $exportLines->count(),
+                'error' => []
+            ];
         } catch (\Throwable $ex) {
             $message = 'Line Error: ' . $ex->getMessage();
             $return['error'][] = $message;
@@ -404,4 +419,57 @@ class WasteController extends Controller
     }
 
 
+    /**
+     * Sends the data header using the given parameters.
+     *
+     * @param array $params The parameters used to send the data header.
+     * @throws Some_Exception_Class A description of the exception that can be thrown.
+     * @return mixed The result of the APIImportSOHeader function.
+     */
+    private function sendDataHeader(array $params)
+    {
+        stream_wrapper_unregister('http');
+        stream_wrapper_register('http', 'App\Helpers\NTLMStream');
+
+        $baseURL = env('NAV_BASE_URL', true);
+        $companyName = env("NAV_COMPANY_NAME", false);
+
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+
+        $codeunit = new NTLMSoapClient($codeunitURL);
+
+        $result = $codeunit->APIImportSOHeader($params);
+
+        stream_wrapper_restore('http');
+
+        return $result;
+    }
+
+    /**
+     * Sends data lines to the specified URL and returns the result.
+     *
+     * @param array $params the parameters to be sent
+     * @throws Exception if the http stream wrapper registration fails
+     * @return mixed the result of the API import
+     */
+    private function sendDataLines(array $params)
+    {
+        stream_wrapper_unregister('http');
+        stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");
+
+        $baseURL = env('NAV_BASE_URL', false);
+        $companyName = env("NAV_COMPANY_NAME", false);
+
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+
+        $codeunit = new NTLMSoapClient($codeunitURL);
+
+        $result = $codeunit->APIImportSOLine($params);
+
+        stream_wrapper_restore('http');
+
+        return $result;
+    }
 }

@@ -19,7 +19,7 @@ use Carbon\Carbon;
 use Exception;
 use SoapFault;
 
-class WasteController extends Controller
+class SalesOrderController extends Controller
 {
     private $date = '';
     private $start = '';
@@ -40,10 +40,9 @@ class WasteController extends Controller
      * @throws Some_Exception_Class Exception thrown if there is an error sending the email.
      * @return void
      */
-    public function index($console = 0, $waste = 1)
+    public function index($console = 0, $waste = 0)
     {
         set_time_limit(0);
-        
         date_default_timezone_set('Asia/Jakarta');
 
         if ($console) {
@@ -52,16 +51,18 @@ class WasteController extends Controller
 
         $today = Carbon::now();
         $date = $today->format('Y-m-d');
-        $this->setVar('start', $date . ' 06:00:00');
-        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 22:59:00');
+        $this->setVar('start', $date . ' 07:00:00');
+        #$this->setVar('end', $date . ' 17:00:00');
+        $this->setVar('end', $today->addDays(1)->format('Y-m-d') . ' 06:00:00');
 
         $query = ExportNAV::with('stores')
             ->where('export_status', 0)
             ->whereHas('stores', function ($query) {
-                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12]);
+                return $query->where('export_nav', '=', 1)->whereIn('location_id', [1, 12, 17, 18, 21, 22]);
             })
             ->whereDate('sales_date', '>=', '2023-01-01')
-            ->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            #->whereDate('sales_date', '<=', Carbon::now()->subDays(7))
+            ->whereDate('sales_date', '<=', '2023-12-31')
             ->orderBy('sales_date', 'asc')
             ->orderBy('store', 'asc');
 
@@ -72,12 +73,6 @@ class WasteController extends Controller
         if (count($head) > 0) {
             $recipients = ['rahmat@sushitei.co.id', 'benardi@sushitei.co.id', 'augus@sushitei.co.id', 'isa.jkt@sushitei.co.id'];
             Mail::to($recipients)->send($email);
-        }else{
-            $separator = $this->is_console ? "\r\n" : "<br/>";
-            $output = '';
-            $output .= 'No data to proccess ' . $separator;
-            
-            echo $output;
         }
     }
 
@@ -369,16 +364,10 @@ class WasteController extends Controller
                 ->addSelect(DB::raw("'portion' AS uom"))
                 ->addSelect(DB::raw("'{$head['custno']}' AS location"))
                 ->addSelect(DB::raw("'' as notes"))
-                ->addSelect('totalprice')
                 ->where('export_id', $head['export_id'])
                 ->where('salestype', 99)
                 ->orderBy('itemno', 'asc')
                 ->get();
-            foreach($exportLines as $line){
-                $return['quantity'] += $line['quantity'];
-                $return['total'] += $line['totalprice'];
-                $return['processed']++;
-            }
             
             $response = Http::withHeaders(['Key-Access' => $hashed])
                 ->post('http://172.16.6.217:12210/$/waste', ['line' => $exportLines->toArray()]);
@@ -386,7 +375,12 @@ class WasteController extends Controller
             if ($response->failed()) {
                 $response->throw();
             }
-            
+            $return = [
+                'quantity' => $exportLines->sum('qty'),
+                'total' => $exportLines->sum('totalprice'),
+                'processed' => $exportLines->count(),
+                'error' => []
+            ];
         } catch (\Throwable $ex) {
             $message = 'Line Error: ' . $ex->getMessage();
             $return['error'][] = $message;
@@ -404,4 +398,57 @@ class WasteController extends Controller
     }
 
 
+    /**
+     * Sends the data header using the given parameters.
+     *
+     * @param array $params The parameters used to send the data header.
+     * @throws Some_Exception_Class A description of the exception that can be thrown.
+     * @return mixed The result of the APIImportSOHeader function.
+     */
+    private function sendDataHeader(array $params)
+    {
+        stream_wrapper_unregister('http');
+        stream_wrapper_register('http', 'App\Helpers\NTLMStream');
+
+        $baseURL = env('NAV_BASE_URL', true);
+        $companyName = env("NAV_COMPANY_NAME", false);
+
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+
+        $codeunit = new NTLMSoapClient($codeunitURL);
+
+        $result = $codeunit->APIImportSOHeader($params);
+
+        stream_wrapper_restore('http');
+
+        return $result;
+    }
+
+    /**
+     * Sends data lines to the specified URL and returns the result.
+     *
+     * @param array $params the parameters to be sent
+     * @throws Exception if the http stream wrapper registration fails
+     * @return mixed the result of the API import
+     */
+    private function sendDataLines(array $params)
+    {
+        stream_wrapper_unregister('http');
+        stream_wrapper_register('http', 'App\Helpers\NTLMStream') or die("Failed to register protocol");
+
+        $baseURL = env('NAV_BASE_URL', false);
+        $companyName = env("NAV_COMPANY_NAME", false);
+
+        $pageURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+        $codeunitURL = $baseURL . rawurlencode($companyName) . '/Codeunit/NAVSync';
+
+        $codeunit = new NTLMSoapClient($codeunitURL);
+
+        $result = $codeunit->APIImportSOLine($params);
+
+        stream_wrapper_restore('http');
+
+        return $result;
+    }
 }

@@ -41,10 +41,34 @@ class DataPOS extends Model
                     ->where('item_code', 'NOT LIKE', '0301-120-%')
                     //Exclude non inventory item ST
                     ->where('item_code', 'NOT LIKE', '9990%')
+                    ->where('item_code', 'NOT LIKE', '1ST%')
                     //Exclude non inventory item CAFE
                     ->where('item_code', 'NOT LIKE', '1CF%')
                     // Exclude non inventory item HY
                     ->where('item_code', 'NOT LIKE', '0501-200-%');
+            })
+
+            ->orderBy('item_code', 'ASC');
+    }
+    public static function monthly($store, $date, $exclude_location)
+    {
+        $excludes = ItemExcluded::select('exc_item_code')->where('exc_item_loc', $exclude_location)->get();
+        $start_date = Carbon::parse($date)->startOfMonth();
+        $end_date = Carbon::parse($date)->endOfMonth();
+        return self::where('store_id', $store)
+            ->whereBetween('sales_date', $start_date, $end_date)
+            ->where(function ($query) use ($excludes) {
+                return $query->whereNotIn('item_code', $excludes)
+                    // Exclude non inventory item TS
+                    ->where('item_code', 'NOT LIKE', '0301-120-%')
+                    //Exclude non inventory item ST
+                    ->where('item_code', 'NOT LIKE', '9990%')
+                    ->where('item_code', 'NOT LIKE', '1ST%')
+                    //Exclude non inventory item CAFE
+                    ->where('item_code', 'NOT LIKE', '1CF%')
+                    // Exclude non inventory item HY
+                    ->where('item_code', 'NOT LIKE', '0501-200-%');
+                    
             })
 
             ->orderBy('item_code', 'ASC');
