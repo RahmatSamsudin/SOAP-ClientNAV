@@ -108,29 +108,6 @@ class SalesOrderController extends Controller
             if ($this->isWithinTimeRange($currentTime)) {
                 $this->setVar('time', $currentTime);
                 $head[$i] = $this->prepareData($header, $currentTime);
-                // try {
-                    
-                //     $success = $this->sendDataHeader($head[$i]);
-                //     if ($success) {
-                //         $head[$i]['line'] = $header->is_waste ? $this->proccessWaste($head[$i]) : $this->proccessLine($head[$i]);
-                //         if (empty($head[$i]['line']['error'])) {
-                //             $head[$i]['is_success'] = 1;
-                //             ExportNAV::where('export_id', $header->export_id)->update(['export_status' => 1]);
-                //             LogExportNav::create([
-                //                 'export_id' => $header->export_id,
-                //                 'message' => 'Success',
-                //                 'quantity' => $head[$i]['line']['quantity'],
-                //                 'total' => $head[$i]['line']['total'],
-                //                 'created_at' => $currentTime
-                //             ]);
-                //         } else {
-                //             ExportNAV::where('export_id', $header->export_id)->update(['last_update' => date("Y-m-d H:i:s")]);
-                //         }
-                //     }
-                // } catch (Exception $ex) {
-                //     $head[$i]['error'][] = $ex->getMessage();
-                // }
-
                 $head[$i]['end'] = date("Y-m-d H:i:s");
                 continue;
             } else {
