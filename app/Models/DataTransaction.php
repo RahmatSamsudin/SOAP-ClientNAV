@@ -29,6 +29,11 @@ class DataTransaction extends Model
         return $this->hasOne(Store::class, 'store_id', 'store_id');
     }
 
+    public static function getRanged($from, $to)
+    {
+        return DB::select(DB::raw("CALL spColorTransactionSummaryReport('{$from}', '{$to}')"));
+    }
+
     public static function daily($store, $date)
     {
         return DB::select(DB::raw("
@@ -147,7 +152,6 @@ class DataTransaction extends Model
 
     ORDER BY
         item_code ASC"));
-
     }
     public static function dailyBackup2($document)
     {

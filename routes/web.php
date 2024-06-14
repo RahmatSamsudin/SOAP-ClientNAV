@@ -19,11 +19,11 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/sync', [SalesOrderController::class, 'index']);
-Route::get('/sync/monthly', [MonthlySalesController::class, 'index']);
-Route::get('/soc/{console}/{waste}', [WasteController::class, 'index']);
-Route::get('/', [HomeController::class, 'index']);
-Route::get('/hometest', [HomeTestController::class, 'index']);
-Route::post('/send', [HomeController::class, 'send']);
-Route::post('/sendtest', [HomeTestController::class, 'send']);
-Route::get('/test', [TestController::class, 'index']);
+Route::get('/generate/line', [SalesOrderController::class, 'index']);
+Route::get('/send/monthly', [MonthlySalesController::class, 'index']);
+#Route::get('/soc/{console}/{waste}', [WasteController::class, 'index']);
+#Route::get('/', [HomeController::class, 'index']);
+#Route::get('/hometest', [HomeTestController::class, 'index']);
+#Route::post('/send', [HomeController::class, 'send']);
+#Route::post('/sendtest', [HomeTestController::class, 'send']);
+#Route::get('/test', [TestController::class, 'index']);
