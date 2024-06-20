@@ -7,13 +7,7 @@ use App\Http\Controllers\Controller;;
 use App\Models\DataTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-
-use Exception;
-
 
 class ColorPlateController extends Controller
 {
@@ -34,30 +28,4 @@ class ColorPlateController extends Controller
         return response()->json(DataTransaction::getRanged($startDate, $endDate));
     }
 
-
-    public function show($id)
-    {
-        return Article::find($id);
-    }
-
-    public function store(Request $request)
-    {
-        return Article::create($request->all());
-    }
-
-    public function update(Request $request, $id)
-    {
-        $article = Article::findOrFail($id);
-        $article->update($request->all());
-
-        return $article;
-    }
-
-    public function delete(Request $request, $id)
-    {
-        $article = Article::findOrFail($id);
-        $article->delete();
-
-        return 204;
-    }
 }
